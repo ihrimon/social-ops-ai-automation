@@ -1,0 +1,82 @@
+import { getMongoCollection } from "./mongo-client.js";
+import { syncKnowledgeBase } from "./knowledge-store.js";
+import { config } from "../config/ai-config.js";
+
+export async function initDatabase() {
+  console.log("Initializing database connection and indexes...");
+  
+  if (!config.mongodbUri) {
+    console.warn("MONGODB_URI is not set. Database integration is disabled.");
+    return false;
+  }
+
+  try {
+    // 1. Initialize message dedupe indexes
+    const dedupeCollection = await getMongoCollection(config.mongodbMessageDedupeCollection);
+    await Promise.all([
+      dedupeCollection.createIndex({ messageId: 1 }, { unique: true }),
+      dedupeCollection.createIndex({ createdAt: 1 }, { expireAfterSeconds: 3600 })
+    ]);
+
+    // 2. Keep comment webhook IDs long enough to prevent public reply loops.
+    const commentDedupeCollection = await getMongoCollection(config.mongodbCommentDedupeCollection);
+    await Promise.all([
+      commentDedupeCollection.createIndex({ commentId: 1 }, { unique: true }),
+      commentDedupeCollection.createIndex({ createdAt: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 }),
+    ]);
+
+    // 3. One short-lived reply buffer per active Messenger user.
+    const pendingRepliesCollection = await getMongoCollection(config.mongodbPendingRepliesCollection);
+    await Promise.all([
+      pendingRepliesCollection.createIndex({ userId: 1 }, { unique: true }),
+      pendingRepliesCollection.createIndex({ status: 1, hasPendingMessages: 1, replyAt: 1 }),
+      pendingRepliesCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    ]);
+
+    // 4. Initialize conversation store indexes
+    const conversationsCollection = await getMongoCollection(config.mongodbConversationsCollection);
+    await Promise.all([
+      conversationsCollection.createIndex({ userId: 1, createdAt: -1 }),
+      conversationsCollection.createIndex({ userId: 1, role: 1, createdAt: -1 }),
+      conversationsCollection.createIndex({ userId: 1, hasEmbedding: 1, createdAt: -1 }),
+    ]);
+
+    // 5. Initialize post log store indexes (TTL 90 days)
+    const postLogsCollection = await getMongoCollection(config.mongodbPostLogsCollection);
+    await Promise.all([
+      postLogsCollection.createIndex({ status: 1, createdAt: -1 }),
+      postLogsCollection.createIndex({ topic: 1, createdAt: -1 }),
+      postLogsCollection.createIndex({ createdAt: -1 }),
+      postLogsCollection.createIndex({ createdAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 }),
+    ]);
+
+    // 6. Initialize knowledge store indexes
+    const knowledgeCollection = await getMongoCollection(config.mongodbKnowledgeCollection);
+    await Promise.all([
+      knowledgeCollection.createIndex({ key: 1 }, { unique: true }),
+      knowledgeCollection.createIndex({ source: 1, active: 1 }),
+      knowledgeCollection.createIndex({ title: "text", text: "text" }) // For local/fallback BM25 matching
+    ]);
+
+    // 7. Initialize embedding cache indexes (TTL 60 days based on lastUsedAt)
+    const embeddingCacheCollection = await getMongoCollection(config.mongodbEmbeddingCacheCollection);
+    await Promise.all([
+      embeddingCacheCollection.createIndex({ key: 1 }, { unique: true }),
+      embeddingCacheCollection.createIndex({ lastUsedAt: 1 }, { expireAfterSeconds: 60 * 24 * 60 * 60 }),
+    ]);
+
+    // 8. Initialize topics collection indexes
+    const topicsCollection = await getMongoCollection(config.mongodbTopicsCollection);
+    await Promise.all([
+      topicsCollection.createIndex({ used: 1, createdAt: 1 }),
+    ]);
+
+    // 9. Run static knowledge base sync once on startup
+    await syncKnowledgeBase();
+    console.log("Database initialized successfully.");
+    return true;
+  } catch (error) {
+    console.error("Database initialization failed:", error.message);
+    throw error;
+  }
+}
