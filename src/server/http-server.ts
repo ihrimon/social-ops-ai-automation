@@ -1,0 +1,75 @@
+import express, { type Application, type NextFunction, type Request, type Response } from "express";
+import type { Server } from "http";
+import { config } from "../config/env.js";
+import { logger } from "../infra/logger.js";
+import {
+  AppError,
+  ConfigError,
+  ExternalServiceError,
+  ValidationError,
+  errorMessage,
+} from "../infra/errors.js";
+import { webhookRouter } from "./webhook-controller.js";
+
+const WEBHOOK_PATH = "/webhook";
+
+/** Maps a known AppError subtype (or a body-parser style `.status`) to the HTTP status it should surface as. */
+function statusForError(error: unknown): number {
+  const declaredStatus =
+    (error as { status?: number; statusCode?: number })?.status ??
+    (error as { status?: number; statusCode?: number })?.statusCode;
+  if (typeof declaredStatus === "number" && declaredStatus >= 400 && declaredStatus < 600) {
+    return declaredStatus;
+  }
+
+  if (error instanceof ValidationError) return 400;
+  if (error instanceof ExternalServiceError) return 502;
+  if (error instanceof ConfigError) return 500;
+  if (error instanceof AppError) return 500;
+  return 500;
+}
+
+/** Centralized error-handling middleware (Express 5 forwards rejected async handlers here automatically). */
+function errorHandler(error: unknown, req: Request, res: Response, next: NextFunction): void {
+  if (res.headersSent) {
+    next(error);
+    return;
+  }
+
+  logger.error(`Unhandled error on ${req.method} ${req.path}:`, { error: errorMessage(error) });
+  res.status(statusForError(error)).json({ error: "Internal Server Error" });
+}
+
+function notFoundHandler(_req: Request, res: Response): void {
+  res.status(404).type("text/plain").send("Not Found");
+}
+
+function createApp(): Application {
+  const app = express();
+
+  app.get("/", (_req, res) => {
+    res.status(200).json({
+      status: "ok",
+      webhook: WEBHOOK_PATH,
+      dailyPost: "9:00 PM Asia/Dhaka",
+    });
+  });
+
+  app.use(WEBHOOK_PATH, webhookRouter);
+
+  app.use(notFoundHandler);
+  app.use(errorHandler);
+
+  return app;
+}
+
+/** Starts the Express webhook + status HTTP server. */
+export function startWebhookServer(): Server {
+  const app = createApp();
+
+  const server = app.listen(config.port, () => {
+    logger.info(`Webhook server running on port ${config.port}. Path: ${WEBHOOK_PATH}`);
+  });
+
+  return server;
+}

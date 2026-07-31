@@ -1,0 +1,223 @@
+import express, { Router, type Request, type Response } from "express";
+import { config } from "../config/env.js";
+import { logger } from "../infra/logger.js";
+import { errorMessage } from "../infra/errors.js";
+import { addConversationMessage } from "../modules/messenger/conversation.store.js";
+import { pauseUserReplies, queueUserMessage } from "../modules/messenger/queue.worker.js";
+import { isBotSentMessage, rememberIncomingMessage } from "../modules/messenger/dedupe.store.js";
+import {
+  forgetIncomingComment,
+  rememberIncomingComment,
+} from "../modules/comments/dedupe.store.js";
+import {
+  generateFacebookCommentReply,
+  getFacebookPostContext,
+  replyToFacebookComment,
+} from "../modules/comments/comment.service.js";
+import {
+  isValidWebhookVerification,
+  verifyFacebookSignature,
+} from "../integrations/facebook/webhook-verifier.js";
+
+const MAX_BODY_BYTES = "1mb";
+
+async function processMessagingEvent(event: any): Promise<void> {
+  const senderId = event.sender?.id;
+  const recipientId = event.recipient?.id;
+  const message = event.message;
+
+  if (!senderId || !message) {
+    return;
+  }
+
+  // Intercept human admin replies (echo events)
+  if (message.is_echo || senderId === config.pageid) {
+    const actualUserId = recipientId;
+    const messageText = message.text?.trim();
+    const messageId = message.mid;
+
+    if (messageId && (await isBotSentMessage(messageId))) {
+      // This echo is from our own bot/app. Ignore it since it's already saved during reply generation.
+      return;
+    }
+
+    if (actualUserId && messageText) {
+      logger.info(
+        `Human admin reply detected. Saving to conversation memory for user ${actualUserId}: ${messageText}`
+      );
+      await addConversationMessage(actualUserId, "assistant", messageText, { isHumanAdmin: true });
+      await pauseUserReplies(actualUserId);
+    }
+    return;
+  }
+
+  const messageId = message.mid || `${senderId}:${event.timestamp || Date.now()}`;
+
+  if (!(await rememberIncomingMessage(messageId, senderId))) {
+    logger.info(`Duplicate Messenger event ignored: ${messageId}`);
+    return;
+  }
+
+  const messageText = message.text?.trim();
+
+  if (!messageText) {
+    logger.info(`Non-text Messenger event ignored: ${messageId}`);
+    return;
+  }
+
+  await queueUserMessage(senderId, messageText, messageId);
+  logger.info(`Queued Messenger message from ${senderId} for consolidated reply.`);
+}
+
+async function processCommentChange(change: any): Promise<void> {
+  const value = change.value || {};
+  const commentId = value.comment_id;
+  const postId = value.post_id;
+  const commenterId = value.from?.id;
+  const commentText = value.message?.trim();
+
+  logger.info("Facebook feed change received:", {
+    field: change.field,
+    item: value.item,
+    verb: value.verb,
+    commentId,
+    postId,
+    parentId: value.parent_id,
+    commenterId,
+    hasCommentText: Boolean(commentText),
+  });
+
+  if (change.field !== "feed") {
+    logger.info("Facebook feed change ignored: field is not 'feed'.");
+    return;
+  }
+
+  if (value.item !== "comment" || value.verb !== "add") {
+    logger.info("Facebook feed change ignored: it is not a newly added comment.");
+    return;
+  }
+
+  // Only answer top-level comments on this Page's own posts. Replies in a
+  // visitor thread are intentionally ignored to prevent public reply loops.
+  let ignoreReason = null;
+  if (!commentId) ignoreReason = "comment_id is missing";
+  else if (!postId) ignoreReason = "post_id is missing";
+  else if (!commenterId) ignoreReason = "comment author ID is missing";
+  else if (!commentText) ignoreReason = "comment text is missing";
+  else if (String(commenterId) === String(config.pageid))
+    ignoreReason = "comment was written by this Page";
+  else if (!String(postId).startsWith(`${config.pageid}_`))
+    ignoreReason = "comment is not on this Page's post";
+  else if (value.parent_id && String(value.parent_id) !== String(postId))
+    ignoreReason = "comment is a reply inside another comment thread";
+
+  if (ignoreReason) {
+    logger.info(`Facebook comment ignored (${commentId || "unknown"}): ${ignoreReason}.`);
+    return;
+  }
+
+  if (!(await rememberIncomingComment(commentId, postId, commenterId))) {
+    logger.info(`Duplicate Facebook comment event ignored: ${commentId}`);
+    return;
+  }
+
+  try {
+    logger.info(`Fetching post context for Facebook comment ${commentId}.`);
+    const postText = await getFacebookPostContext(postId);
+    logger.info(
+      `Post context loaded for ${commentId} (${postText.length} characters). Generating AI decision.`
+    );
+    const reply = await generateFacebookCommentReply(postText, commentText);
+    if (!reply) {
+      logger.info(
+        `Facebook comment ${commentId} was classified as non-service-related; no reply sent.`
+      );
+      return;
+    }
+
+    logger.info(`Service-related Facebook comment detected (${commentId}). Sending public reply.`);
+    await replyToFacebookComment(commentId, reply);
+    logger.info(`Sent Facebook comment reply for ${commentId}.`);
+  } catch (error) {
+    // The Graph API's own error detail is already embedded in error.message
+    // by integrations/facebook/graph-client.ts, so nothing else to unwrap here.
+    logger.error(`Facebook comment reply failed for ${commentId}:`, { error: errorMessage(error) });
+    await forgetIncomingComment(commentId);
+  }
+}
+
+async function handleWebhookPost(req: Request, res: Response): Promise<void> {
+  try {
+    const rawBody = req.rawBody ?? Buffer.from(JSON.stringify(req.body ?? {}));
+
+    if (!verifyFacebookSignature(req, rawBody)) {
+      logger.warn("Unauthorized webhook request rejected (invalid signature).");
+      res.status(403).send("Forbidden");
+      return;
+    }
+
+    const payload = req.body;
+    logger.info("Webhook POST received payload:", { payload });
+
+    res.status(200).send("EVENT_RECEIVED");
+
+    if (payload.object !== "page") {
+      logger.info("Ignoring non-page object event:", { object: payload.object });
+      return;
+    }
+
+    const events = payload.entry.flatMap((entry: any) => entry.messaging || []);
+    // Preserve Messenger's event order. This matters when an admin handoff and
+    // a user message arrive in the same webhook payload.
+    for (const event of events) {
+      await processMessagingEvent(event);
+    }
+
+    const commentChanges = payload.entry.flatMap((entry: any) => entry.changes || []);
+    if (commentChanges.length) {
+      logger.info(`Processing ${commentChanges.length} Facebook Page feed change(s).`);
+    }
+    for (const change of commentChanges) {
+      await processCommentChange(change);
+    }
+  } catch (error) {
+    logger.error("Webhook POST handling failed:", { error: errorMessage(error) });
+
+    if (!res.headersSent) {
+      res.status(400).send("Bad Request");
+    }
+  }
+}
+
+function handleWebhookVerification(req: Request, res: Response): void {
+  const { "hub.mode": mode, "hub.verify_token": token, "hub.challenge": challenge } = req.query;
+
+  if (isValidWebhookVerification(mode, token)) {
+    logger.info("Facebook webhook verified successfully.");
+    res.status(200).send(typeof challenge === "string" ? challenge : "");
+    return;
+  }
+
+  logger.warn("Facebook webhook verification failed.");
+  res.status(403).send("Forbidden");
+}
+
+/**
+ * Facebook signs the exact raw bytes it sends, so this route keeps its own
+ * `express.json()` (with `verify`) instead of relying on a global body
+ * parser — the raw buffer must survive parsing for `verifyFacebookSignature`.
+ */
+export const webhookRouter: Router = Router();
+
+webhookRouter.use(
+  express.json({
+    limit: MAX_BODY_BYTES,
+    type: "*/*",
+    verify: (req, _res, buf) => {
+      (req as Request).rawBody = buf;
+    },
+  })
+);
+
+webhookRouter.get("/", handleWebhookVerification);
+webhookRouter.post("/", handleWebhookPost);
