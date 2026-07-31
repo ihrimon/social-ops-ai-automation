@@ -1,5 +1,5 @@
 import mongoose, { type InferSchemaType, type Model } from "mongoose";
-import { config } from "../../config/env.js";
+import { mongoConfig } from "../../config/env.js";
 
 const { Schema, model, models } = mongoose;
 
@@ -21,4 +21,4 @@ const modelName = "Topic";
 
 export const Topic: Model<TopicDoc> =
   (models[modelName] as Model<TopicDoc>) ||
-  model<TopicDoc>(modelName, topicSchema, config.mongodbTopicsCollection);
+  model<TopicDoc>(modelName, topicSchema, mongoConfig.topicsCollection);

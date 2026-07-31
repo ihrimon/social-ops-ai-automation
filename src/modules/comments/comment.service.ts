@@ -1,4 +1,4 @@
-import { config } from "../../config/env.js";
+import { aiConfig } from "../../config/env.js";
 import { logger } from "../../infra/logger.js";
 import { generateContent } from "../../ai/client.js";
 import { errorMessage } from "../../infra/errors.js";
@@ -49,7 +49,7 @@ export async function generateFacebookCommentReply(
     logger.info("Generating AI decision for Facebook comment reply.");
     const relevantKnowledge = await getRelevantKnowledge(`${postText}\n${commentText}`);
     const prompt = buildCommentClassifyPrompt(postText, commentText, relevantKnowledge);
-    const reply = await generateContent(config.model, prompt);
+    const reply = await generateContent(aiConfig.model, prompt);
 
     if (!reply || reply.toUpperCase() === "SKIP") {
       logger.info("AI classified Facebook comment as non-service-related.");

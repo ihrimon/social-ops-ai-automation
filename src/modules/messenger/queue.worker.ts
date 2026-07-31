@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Model } from "mongoose";
-import { config } from "../../config/env.js";
+import { messengerConfig } from "../../config/env.js";
 import { logger } from "../../infra/logger.js";
 import { PendingReply, type PendingReplyDoc } from "./pending-reply.model.js";
 
@@ -41,7 +41,7 @@ export async function queueUserMessage(
   model: Model<PendingReplyDoc> = PendingReply
 ): Promise<void> {
   const now = new Date();
-  const replyAt = new Date(now.getTime() + config.messengerReplyDebounceMs);
+  const replyAt = new Date(now.getTime() + messengerConfig.replyDebounceMs);
   const message: PendingReplyMessage = { id: messageId, text, receivedAt: now };
 
   await model.collection.updateOne(
@@ -54,7 +54,7 @@ export async function queueUserMessage(
           messages: {
             $slice: [
               { $concatArrays: [{ $ifNull: ["$messages", []] }, [message]] },
-              -config.messengerPendingMessageLimit,
+              -messengerConfig.pendingMessageLimit,
             ],
           },
           // Do not interrupt a reply already being generated. The new message
@@ -89,7 +89,7 @@ export async function pauseUserReplies(
   model: Model<PendingReplyDoc> = PendingReply
 ): Promise<void> {
   const now = new Date();
-  const pausedUntil = new Date(now.getTime() + config.messengerAdminPauseMs);
+  const pausedUntil = new Date(now.getTime() + messengerConfig.adminPauseMs);
 
   await model.updateOne(
     { userId },
@@ -161,7 +161,7 @@ export async function claimNextDueReply(
         delivered: false,
         claimId,
         claimedAt: now,
-        leaseUntil: new Date(now.getTime() + config.messengerReplyLeaseMs),
+        leaseUntil: new Date(now.getTime() + messengerConfig.replyLeaseMs),
         updatedAt: now,
       },
     },
@@ -182,7 +182,7 @@ export async function wasPausedAfterClaim(
 
 export async function releaseClaim(
   job: PendingReplyJob,
-  retryDelayMs = config.messengerReplyRetryMs,
+  retryDelayMs = messengerConfig.replyRetryMs,
   model: Model<PendingReplyDoc> = PendingReply
 ): Promise<void> {
   const now = new Date();

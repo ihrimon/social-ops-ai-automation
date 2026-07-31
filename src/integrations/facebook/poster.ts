@@ -1,11 +1,11 @@
 import { logger } from "../../infra/logger.js";
 import { errorMessage } from "../../infra/errors.js";
-import { config } from "../../config/env.js";
+import { facebookConfig } from "../../config/env.js";
 import { graphPost } from "./graph-client.js";
 
 export async function createPublicPost(article: string) {
   try {
-    const response = await graphPost(`${config.pageid}/feed`, { message: article });
+    const response = await graphPost(`${facebookConfig.pageId}/feed`, { message: article });
     logger.info("Facebook text post response:", { data: response.data });
     return response.data;
   } catch (error) {

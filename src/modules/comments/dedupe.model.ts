@@ -1,5 +1,5 @@
 import mongoose, { type InferSchemaType, type Model } from "mongoose";
-import { config } from "../../config/env.js";
+import { mongoConfig } from "../../config/env.js";
 
 const { Schema, model, models } = mongoose;
 
@@ -22,4 +22,4 @@ const modelName = "CommentDedupe";
 
 export const CommentDedupe: Model<CommentDedupeDoc> =
   (models[modelName] as Model<CommentDedupeDoc>) ||
-  model<CommentDedupeDoc>(modelName, commentDedupeSchema, config.mongodbCommentDedupeCollection);
+  model<CommentDedupeDoc>(modelName, commentDedupeSchema, mongoConfig.commentDedupeCollection);

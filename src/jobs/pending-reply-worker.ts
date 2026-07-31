@@ -1,4 +1,4 @@
-import { config } from "../config/env.js";
+import { messengerConfig, mongoConfig } from "../config/env.js";
 import { logger } from "../infra/logger.js";
 import { errorMessage } from "../infra/errors.js";
 import {
@@ -91,7 +91,7 @@ async function runPendingReplyWorker(): Promise<void> {
     await reclaimExpiredLeases();
 
     const jobs = [];
-    for (let index = 0; index < config.messengerReplyConcurrency; index += 1) {
+    for (let index = 0; index < messengerConfig.replyConcurrency; index += 1) {
       const job = await claimNextDueReply();
       if (!job) break;
       jobs.push(processPendingReply(job));
@@ -106,14 +106,14 @@ async function runPendingReplyWorker(): Promise<void> {
 
 /** Starts the polling loop that debounces and sends consolidated Messenger replies. */
 export function startPendingReplyWorker(): void {
-  if (!config.mongodbUri) {
+  if (!mongoConfig.uri) {
     logger.warn("Pending Messenger reply worker is disabled because MONGODB_URI is not set.");
     return;
   }
 
-  setInterval(runPendingReplyWorker, config.messengerReplyPollMs);
+  setInterval(runPendingReplyWorker, messengerConfig.replyPollMs);
   void runPendingReplyWorker();
   logger.info(
-    `Messenger reply worker started (debounce: ${config.messengerReplyDebounceMs / 1000}s).`
+    `Messenger reply worker started (debounce: ${messengerConfig.replyDebounceMs / 1000}s).`
   );
 }

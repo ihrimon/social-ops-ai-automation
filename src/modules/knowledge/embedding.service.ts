@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import type { GoogleGenerativeAI } from "@google/generative-ai";
 import type { Model } from "mongoose";
-import { config } from "../../config/env.js";
+import { aiConfig } from "../../config/env.js";
 import { genAI, withRetry } from "../../ai/client.js";
 import { ExternalServiceError, errorMessage } from "../../infra/errors.js";
 import { EmbeddingCache, type EmbeddingCacheDoc } from "./embedding-cache.model.js";
@@ -15,7 +15,7 @@ function normalizeText(text: unknown): string {
 function createEmbeddingKey(text: string): string {
   return crypto
     .createHash("sha256")
-    .update(`${config.embeddingModel}:${normalizeText(text)}`)
+    .update(`${aiConfig.embeddingModel}:${normalizeText(text)}`)
     .digest("hex");
 }
 
@@ -38,7 +38,7 @@ export async function createEmbedding(
     return cached.embedding;
   }
 
-  const geminiModel = aiClient.getGenerativeModel({ model: config.embeddingModel });
+  const geminiModel = aiClient.getGenerativeModel({ model: aiConfig.embeddingModel });
   let embedding: number[];
   try {
     const result = await withRetry(() => geminiModel.embedContent(normalizedText));
@@ -51,7 +51,7 @@ export async function createEmbedding(
   try {
     await model.create({
       key,
-      model: config.embeddingModel,
+      model: aiConfig.embeddingModel,
       textPreview: normalizedText.slice(0, 300),
       embedding,
       createdAt: now,

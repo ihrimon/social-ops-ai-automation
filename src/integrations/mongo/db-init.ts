@@ -1,4 +1,4 @@
-import { config } from "../../config/env.js";
+import { mongoConfig } from "../../config/env.js";
 import { logger } from "../../infra/logger.js";
 import { errorMessage } from "../../infra/errors.js";
 import { syncKnowledgeBase } from "../../modules/knowledge/knowledge.store.js";
@@ -15,7 +15,7 @@ import { connectMongo } from "./client.js";
 export async function initDatabase(): Promise<boolean> {
   logger.info("Initializing database connection and indexes...");
 
-  if (!config.mongodbUri) {
+  if (!mongoConfig.uri) {
     logger.warn("MONGODB_URI is not set. Database integration is disabled.");
     return false;
   }

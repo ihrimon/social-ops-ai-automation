@@ -1,4 +1,4 @@
-import { config } from "../../config/env.js";
+import { mongoConfig } from "../../config/env.js";
 import { logger } from "../../infra/logger.js";
 import { errorMessage } from "../../infra/errors.js";
 import { MessageDedupe, type MessageDedupeDoc } from "./dedupe.model.js";
@@ -31,7 +31,7 @@ export async function rememberBotSentMessage(
   botSentMessageMemory.add(messageId);
   setTimeout(() => botSentMessageMemory.delete(messageId), 120000);
 
-  if (!config.mongodbUri) return;
+  if (!mongoConfig.uri) return;
 
   try {
     await model.create({ messageId: `bot_sent:${messageId}`, isBotSent: true });
@@ -49,7 +49,7 @@ export async function isBotSentMessage(
   if (!messageId) return false;
   if (botSentMessageMemory.has(messageId)) return true;
 
-  if (!config.mongodbUri) return false;
+  if (!mongoConfig.uri) return false;
 
   try {
     const doc = await model.exists({ messageId: `bot_sent:${messageId}` });

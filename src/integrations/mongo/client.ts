@@ -1,11 +1,11 @@
 import mongoose from "mongoose";
-import { config } from "../../config/env.js";
+import { mongoConfig } from "../../config/env.js";
 import { ConfigError } from "../../infra/errors.js";
 
 let connectionPromise: Promise<typeof mongoose> | null = null;
 
 function requireMongoUri(): void {
-  if (!config.mongodbUri) {
+  if (!mongoConfig.uri) {
     throw new ConfigError("MONGODB_URI is missing. Add it to your .env file.");
   }
 }
@@ -15,11 +15,11 @@ export function connectMongo(): Promise<typeof mongoose> {
   requireMongoUri();
 
   if (!connectionPromise) {
-    connectionPromise = mongoose.connect(config.mongodbUri as string, {
-      dbName: config.mongodbDbName,
-      maxPoolSize: config.mongodbMaxPoolSize,
-      minPoolSize: config.mongodbMinPoolSize,
-      serverSelectionTimeoutMS: config.mongodbServerSelectionTimeoutMs,
+    connectionPromise = mongoose.connect(mongoConfig.uri as string, {
+      dbName: mongoConfig.dbName,
+      maxPoolSize: mongoConfig.maxPoolSize,
+      minPoolSize: mongoConfig.minPoolSize,
+      serverSelectionTimeoutMS: mongoConfig.serverSelectionTimeoutMs,
     });
   }
 

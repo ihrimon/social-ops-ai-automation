@@ -1,5 +1,5 @@
 import mongoose, { type InferSchemaType, type Model } from "mongoose";
-import { config } from "../../config/env.js";
+import { mongoConfig } from "../../config/env.js";
 
 const { Schema, model, models } = mongoose;
 
@@ -28,4 +28,4 @@ const modelName = "KnowledgeChunk";
 
 export const KnowledgeChunk: Model<KnowledgeChunkDoc> =
   (models[modelName] as Model<KnowledgeChunkDoc>) ||
-  model<KnowledgeChunkDoc>(modelName, knowledgeChunkSchema, config.mongodbKnowledgeCollection);
+  model<KnowledgeChunkDoc>(modelName, knowledgeChunkSchema, mongoConfig.knowledgeCollection);

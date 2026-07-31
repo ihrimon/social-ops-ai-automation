@@ -1,5 +1,5 @@
 import type { Model } from "mongoose";
-import { config } from "../../config/env.js";
+import { mongoConfig } from "../../config/env.js";
 import { logger } from "../../infra/logger.js";
 import { errorMessage } from "../../infra/errors.js";
 import { createEmbedding } from "../knowledge/embedding.service.js";
@@ -45,7 +45,7 @@ async function getRelevantMessages(
     const messages = await model.aggregate([
       {
         $vectorSearch: {
-          index: config.mongodbConversationVectorIndex,
+          index: mongoConfig.conversationVectorIndex,
           path: "embedding",
           queryVector,
           numCandidates: 50,
@@ -94,7 +94,7 @@ export async function getConversationContext(
   userMessage = "",
   model: Model<ConversationMessageDoc> = ConversationMessage
 ) {
-  if (!config.mongodbUri) {
+  if (!mongoConfig.uri) {
     logger.warn("MONGODB_URI is not set. Skipping conversation memory retrieval.");
     return { recentMessages: [], relevantMemories: [] };
   }
@@ -121,7 +121,7 @@ export async function addConversationMessage(
   metadata: Record<string, unknown> = {},
   model: Model<ConversationMessageDoc> = ConversationMessage
 ): Promise<void> {
-  if (!config.mongodbUri) {
+  if (!mongoConfig.uri) {
     logger.warn("MONGODB_URI is not set. Skipping saving conversation message.");
     return;
   }
@@ -149,7 +149,7 @@ export async function getLastHumanInteractionTime(
   userId: string,
   model: Model<ConversationMessageDoc> = ConversationMessage
 ): Promise<Date | null> {
-  if (!config.mongodbUri) {
+  if (!mongoConfig.uri) {
     return null;
   }
   try {

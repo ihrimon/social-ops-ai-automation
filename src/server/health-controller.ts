@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { config } from "../config/env.js";
+import { aiConfig, mongoConfig } from "../config/env.js";
 import { isMongoConnected } from "../integrations/mongo/client.js";
 
 export const healthRouter: Router = Router();
@@ -17,9 +17,9 @@ healthRouter.get("/health", (_req, res) => {
  *   call, so this stays cheap enough to poll frequently.
  */
 healthRouter.get("/ready", (_req, res) => {
-  const mongoConfigured = Boolean(config.mongodbUri);
+  const mongoConfigured = Boolean(mongoConfig.uri);
   const mongoReady = !mongoConfigured || isMongoConnected();
-  const aiConfigured = Boolean(config.geminiApiKey);
+  const aiConfigured = Boolean(aiConfig.geminiApiKey);
 
   const checks = {
     mongo: !mongoConfigured ? "not_configured" : mongoReady ? "connected" : "disconnected",

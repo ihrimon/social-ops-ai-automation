@@ -1,5 +1,5 @@
 import mongoose, { type InferSchemaType, type Model } from "mongoose";
-import { config } from "../../config/env.js";
+import { mongoConfig } from "../../config/env.js";
 
 const { Schema, model, models } = mongoose;
 
@@ -23,4 +23,4 @@ const modelName = "EmbeddingCache";
 
 export const EmbeddingCache: Model<EmbeddingCacheDoc> =
   (models[modelName] as Model<EmbeddingCacheDoc>) ||
-  model<EmbeddingCacheDoc>(modelName, embeddingCacheSchema, config.mongodbEmbeddingCacheCollection);
+  model<EmbeddingCacheDoc>(modelName, embeddingCacheSchema, mongoConfig.embeddingCacheCollection);

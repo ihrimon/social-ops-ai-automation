@@ -1,12 +1,12 @@
 import crypto from "crypto";
 import type { IncomingMessage } from "http";
-import { config } from "../../config/env.js";
+import { facebookConfig } from "../../config/env.js";
 import { logger } from "../../infra/logger.js";
 import { errorMessage } from "../../infra/errors.js";
 
 /** Verifies the `x-hub-signature-256` HMAC header Facebook sends on webhook POSTs. */
 export function verifyFacebookSignature(request: IncomingMessage, body: string | Buffer): boolean {
-  if (!config.fbAppSecret) {
+  if (!facebookConfig.appSecret) {
     logger.warn("FB_APP_SECRET is not configured. Skipping webhook signature verification.");
     return true;
   }
@@ -25,7 +25,7 @@ export function verifyFacebookSignature(request: IncomingMessage, body: string |
 
   try {
     const expectedSignature = crypto
-      .createHmac("sha256", config.fbAppSecret)
+      .createHmac("sha256", facebookConfig.appSecret)
       .update(body)
       .digest("hex");
 
@@ -41,5 +41,5 @@ export function verifyFacebookSignature(request: IncomingMessage, body: string |
 
 /** Verifies the `hub.verify_token` handshake Facebook sends on the webhook GET subscription check. */
 export function isValidWebhookVerification(mode: unknown, token: unknown): boolean {
-  return mode === "subscribe" && typeof token === "string" && token === config.fbVerifyToken;
+  return mode === "subscribe" && typeof token === "string" && token === facebookConfig.verifyToken;
 }

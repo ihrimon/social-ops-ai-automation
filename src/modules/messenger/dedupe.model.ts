@@ -1,5 +1,5 @@
 import mongoose, { type InferSchemaType, type Model } from "mongoose";
-import { config } from "../../config/env.js";
+import { mongoConfig } from "../../config/env.js";
 
 // Mongoose is a CJS package; under Node's ESM loader `Schema`/`model`/`models`
 // can't reliably be named-imported (cjs-module-lexer can't see `models`,
@@ -24,4 +24,4 @@ const modelName = "MessageDedupe";
 
 export const MessageDedupe: Model<MessageDedupeDoc> =
   (models[modelName] as Model<MessageDedupeDoc>) ||
-  model<MessageDedupeDoc>(modelName, messageDedupeSchema, config.mongodbMessageDedupeCollection);
+  model<MessageDedupeDoc>(modelName, messageDedupeSchema, mongoConfig.messageDedupeCollection);

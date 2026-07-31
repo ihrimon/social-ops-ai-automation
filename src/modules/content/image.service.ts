@@ -1,8 +1,8 @@
-import { config } from "../../config/env.js";
+import { aiConfig } from "../../config/env.js";
 import { logger } from "../../infra/logger.js";
 
 const HORDE_API_BASE = "https://aihorde.net/api/v2";
-const ANON_API_KEY = config.aiHordeApiKey;
+const ANON_API_KEY = aiConfig.aiHordeApiKey;
 
 // AI Horde dynamically lowers resolution limits during heavy demand.
 // 512x512 is the base SD resolution and always accepted by the anon key.
@@ -98,14 +98,17 @@ export async function generateImage(data: { inputs?: string }): Promise<string |
     const arrayBuffer = await imageFetch.arrayBuffer();
     const base64Image = Buffer.from(arrayBuffer).toString("base64");
 
-    const uploadResponse = await fetch(`https://api.imgbb.com/1/upload?key=${config.imgbbApiKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        image: base64Image,
-        name: data.inputs ? data.inputs.substring(0, 50) : "generated_image",
-      }),
-    });
+    const uploadResponse = await fetch(
+      `https://api.imgbb.com/1/upload?key=${aiConfig.imgbbApiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          image: base64Image,
+          name: data.inputs ? data.inputs.substring(0, 50) : "generated_image",
+        }),
+      }
+    );
 
     const uploadResult: any = await uploadResponse.json();
 

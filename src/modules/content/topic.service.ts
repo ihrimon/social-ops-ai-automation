@@ -1,5 +1,5 @@
 import type { Model } from "mongoose";
-import { config } from "../../config/env.js";
+import { aiConfig } from "../../config/env.js";
 import { logger } from "../../infra/logger.js";
 import { generateContent } from "../../ai/client.js";
 import { ValidationError, errorMessage } from "../../infra/errors.js";
@@ -8,7 +8,7 @@ import { Topic, type TopicDoc } from "./topic.model.js";
 
 export async function generateMonthlyTopics(): Promise<string[]> {
   try {
-    const text = await generateContent(config.model, MONTHLY_TOPICS_PROMPT);
+    const text = await generateContent(aiConfig.model, MONTHLY_TOPICS_PROMPT);
     const cleanedText = text
       .replace(/```json\n?/gi, "")
       .replace(/```\n?/g, "")

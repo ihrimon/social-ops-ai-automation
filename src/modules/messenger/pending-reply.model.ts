@@ -1,5 +1,5 @@
 import mongoose, { type InferSchemaType, type Model } from "mongoose";
-import { config } from "../../config/env.js";
+import { mongoConfig } from "../../config/env.js";
 
 const { Schema, model, models } = mongoose;
 
@@ -44,4 +44,4 @@ const modelName = "PendingReply";
 
 export const PendingReply: Model<PendingReplyDoc> =
   (models[modelName] as Model<PendingReplyDoc>) ||
-  model<PendingReplyDoc>(modelName, pendingReplySchema, config.mongodbPendingRepliesCollection);
+  model<PendingReplyDoc>(modelName, pendingReplySchema, mongoConfig.pendingRepliesCollection);

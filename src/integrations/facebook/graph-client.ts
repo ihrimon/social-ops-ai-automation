@@ -1,11 +1,11 @@
 import axios from "axios";
-import { config } from "../../config/env.js";
+import { facebookConfig } from "../../config/env.js";
 import { withRetry } from "../../infra/retry.js";
 import { ExternalServiceError } from "../../infra/errors.js";
 
 /** Base URL for the configured Facebook Graph API version. */
 export function graphUrl(path: string): string {
-  return `https://graph.facebook.com/${config.graphApiVersion}/${path}`;
+  return `https://graph.facebook.com/${facebookConfig.graphApiVersion}/${path}`;
 }
 
 /**
@@ -30,7 +30,7 @@ export async function graphGet<T = any>(path: string, params: Record<string, unk
   try {
     return await withRetry(() =>
       axios.get<T>(graphUrl(path), {
-        params: { access_token: config.fbAccessToken, ...params },
+        params: { access_token: facebookConfig.pageAccessToken, ...params },
       })
     );
   } catch (error) {
@@ -47,7 +47,7 @@ export async function graphPost<T = any>(
   try {
     return await withRetry(() =>
       axios.post<T>(graphUrl(path), body, {
-        params: { access_token: config.fbAccessToken, ...params },
+        params: { access_token: facebookConfig.pageAccessToken, ...params },
         headers: { "Content-Type": "application/json" },
       })
     );

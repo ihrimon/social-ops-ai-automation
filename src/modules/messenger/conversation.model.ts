@@ -1,5 +1,5 @@
 import mongoose, { type InferSchemaType, type Model } from "mongoose";
-import { config } from "../../config/env.js";
+import { mongoConfig } from "../../config/env.js";
 
 const { Schema, model, models } = mongoose;
 
@@ -29,5 +29,5 @@ export const ConversationMessage: Model<ConversationMessageDoc> =
   model<ConversationMessageDoc>(
     modelName,
     conversationMessageSchema,
-    config.mongodbConversationsCollection
+    mongoConfig.conversationsCollection
   );

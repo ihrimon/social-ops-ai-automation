@@ -1,5 +1,5 @@
 import mongoose, { type InferSchemaType, type Model } from "mongoose";
-import { config } from "../../config/env.js";
+import { mongoConfig } from "../../config/env.js";
 
 const { Schema, model, models } = mongoose;
 
@@ -36,4 +36,4 @@ const modelName = "PostLog";
 
 export const PostLog: Model<PostLogDoc> =
   (models[modelName] as Model<PostLogDoc>) ||
-  model<PostLogDoc>(modelName, postLogSchema, config.mongodbPostLogsCollection);
+  model<PostLogDoc>(modelName, postLogSchema, mongoConfig.postLogsCollection);

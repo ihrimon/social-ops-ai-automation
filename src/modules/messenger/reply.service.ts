@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { config } from "../../config/env.js";
+import { aiConfig } from "../../config/env.js";
 import { logger } from "../../infra/logger.js";
 import { generateContent } from "../../ai/client.js";
 import { errorMessage } from "../../infra/errors.js";
@@ -43,7 +43,7 @@ export async function generateMessengerReply(
       relevantMemories,
       recentMessages
     );
-    const reply = await generateContent(config.model, prompt);
+    const reply = await generateContent(aiConfig.model, prompt);
 
     return reply || knowledgeBase.fallback_reply;
   } catch (error) {

@@ -1,9 +1,9 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { config } from "../config/env.js";
+import { aiConfig } from "../config/env.js";
 import { withRetry } from "../infra/retry.js";
 import { ExternalServiceError, errorMessage } from "../infra/errors.js";
 
-export const genAI = new GoogleGenerativeAI(config.geminiApiKey);
+export const genAI = new GoogleGenerativeAI(aiConfig.geminiApiKey);
 
 export { withRetry } from "../infra/retry.js";
 

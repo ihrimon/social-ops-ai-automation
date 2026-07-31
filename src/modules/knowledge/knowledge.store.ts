@@ -2,7 +2,7 @@ import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
 import type { Model } from "mongoose";
-import { config } from "../../config/env.js";
+import { mongoConfig } from "../../config/env.js";
 import { logger } from "../../infra/logger.js";
 import { createEmbedding } from "./embedding.service.js";
 import { KnowledgeChunk, type KnowledgeChunkDoc } from "./knowledge-chunk.model.js";
@@ -158,7 +158,7 @@ export async function getRelevantKnowledge(
   model: Model<KnowledgeChunkDoc> = KnowledgeChunk
 ): Promise<KnowledgeChunkSeed[]> {
   // If MongoDB URI is not set, immediately fallback to local knowledge-base.json to avoid crashes
-  if (!config.mongodbUri) {
+  if (!mongoConfig.uri) {
     if (cachedKnowledgeChunks) {
       return cachedKnowledgeChunks.slice(0, KNOWLEDGE_RESULT_LIMIT);
     }
@@ -197,7 +197,7 @@ export async function getRelevantKnowledge(
       .aggregate([
         {
           $vectorSearch: {
-            index: config.mongodbKnowledgeVectorIndex,
+            index: mongoConfig.knowledgeVectorIndex,
             path: "embedding",
             queryVector,
             numCandidates: 50,

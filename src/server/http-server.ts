@@ -1,6 +1,6 @@
 import express, { type Application, type NextFunction, type Request, type Response } from "express";
 import type { Server } from "http";
-import { config } from "../config/env.js";
+import { serverConfig } from "../config/env.js";
 import { logger } from "../infra/logger.js";
 import {
   AppError,
@@ -71,8 +71,8 @@ function createApp(): Application {
 export function startWebhookServer(): Server {
   const app = createApp();
 
-  const server = app.listen(config.port, () => {
-    logger.info(`Webhook server running on port ${config.port}. Path: ${WEBHOOK_PATH}`);
+  const server = app.listen(serverConfig.port, () => {
+    logger.info(`Webhook server running on port ${serverConfig.port}. Path: ${WEBHOOK_PATH}`);
   });
 
   return server;

@@ -1,5 +1,5 @@
 import express, { Router, type Request, type Response } from "express";
-import { config } from "../config/env.js";
+import { facebookConfig } from "../config/env.js";
 import { logger } from "../infra/logger.js";
 import { errorMessage } from "../infra/errors.js";
 import { addConversationMessage } from "../modules/messenger/conversation.store.js";
@@ -32,7 +32,7 @@ async function processMessagingEvent(event: any): Promise<void> {
   }
 
   // Intercept human admin replies (echo events)
-  if (message.is_echo || senderId === config.pageid) {
+  if (message.is_echo || senderId === facebookConfig.pageId) {
     const actualUserId = recipientId;
     const messageText = message.text?.trim();
     const messageId = message.mid;
@@ -105,9 +105,9 @@ async function processCommentChange(change: any): Promise<void> {
   else if (!postId) ignoreReason = "post_id is missing";
   else if (!commenterId) ignoreReason = "comment author ID is missing";
   else if (!commentText) ignoreReason = "comment text is missing";
-  else if (String(commenterId) === String(config.pageid))
+  else if (String(commenterId) === String(facebookConfig.pageId))
     ignoreReason = "comment was written by this Page";
-  else if (!String(postId).startsWith(`${config.pageid}_`))
+  else if (!String(postId).startsWith(`${facebookConfig.pageId}_`))
     ignoreReason = "comment is not on this Page's post";
   else if (value.parent_id && String(value.parent_id) !== String(postId))
     ignoreReason = "comment is a reply inside another comment thread";
