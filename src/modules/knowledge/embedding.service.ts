@@ -1,19 +1,10 @@
 import crypto from "crypto";
+import type { GoogleGenerativeAI } from "@google/generative-ai";
+import type { Model } from "mongoose";
 import { config } from "../../config/env.js";
-import { createRepository } from "../../integrations/mongo/repository.js";
 import { genAI, withRetry } from "../../ai/client.js";
 import { ExternalServiceError, errorMessage } from "../../infra/errors.js";
-
-interface EmbeddingCacheDoc {
-  key: string;
-  model: string;
-  textPreview: string;
-  embedding: number[];
-  createdAt: Date;
-  lastUsedAt: Date;
-}
-
-const cacheRepo = createRepository<EmbeddingCacheDoc>(config.mongodbEmbeddingCacheCollection);
+import { EmbeddingCache, type EmbeddingCacheDoc } from "./embedding-cache.model.js";
 
 function normalizeText(text: unknown): string {
   return String(text || "")
@@ -28,7 +19,11 @@ function createEmbeddingKey(text: string): string {
     .digest("hex");
 }
 
-export async function createEmbedding(text: unknown): Promise<number[]> {
+export async function createEmbedding(
+  text: unknown,
+  model: Model<EmbeddingCacheDoc> = EmbeddingCache,
+  aiClient: GoogleGenerativeAI = genAI
+): Promise<number[]> {
   const normalizedText = normalizeText(text);
 
   if (!normalizedText) {
@@ -36,18 +31,17 @@ export async function createEmbedding(text: unknown): Promise<number[]> {
   }
 
   const key = createEmbeddingKey(normalizedText);
-  const collection = await cacheRepo.collection();
-  const cached = await collection.findOne({ key }, { projection: { _id: 0, embedding: 1 } });
+  const cached = await model.findOne({ key }).select({ _id: 0, embedding: 1 }).lean();
 
   if (cached?.embedding?.length) {
-    await collection.updateOne({ key }, { $set: { lastUsedAt: new Date() } });
+    await model.updateOne({ key }, { $set: { lastUsedAt: new Date() } });
     return cached.embedding;
   }
 
-  const model = genAI.getGenerativeModel({ model: config.embeddingModel });
+  const geminiModel = aiClient.getGenerativeModel({ model: config.embeddingModel });
   let embedding: number[];
   try {
-    const result = await withRetry(() => model.embedContent(normalizedText));
+    const result = await withRetry(() => geminiModel.embedContent(normalizedText));
     embedding = result.embedding.values;
   } catch (error) {
     throw new ExternalServiceError("gemini", errorMessage(error), error);
@@ -55,20 +49,20 @@ export async function createEmbedding(text: unknown): Promise<number[]> {
   const now = new Date();
 
   try {
-    await collection.insertOne({
+    await model.create({
       key,
       model: config.embeddingModel,
       textPreview: normalizedText.slice(0, 300),
       embedding,
       createdAt: now,
       lastUsedAt: now,
-    } as EmbeddingCacheDoc);
+    });
   } catch (error) {
-    if ((error as any).code !== 11000) {
+    if ((error as { code?: number }).code !== 11000) {
       throw error;
     }
 
-    const winner = await collection.findOne({ key }, { projection: { _id: 0, embedding: 1 } });
+    const winner = await model.findOne({ key }).select({ _id: 0, embedding: 1 }).lean();
     return winner?.embedding || embedding;
   }
 

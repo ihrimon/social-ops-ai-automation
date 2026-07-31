@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import type { Model } from "mongoose";
 import { config } from "../../config/env.js";
-import { createRepository } from "../../integrations/mongo/repository.js";
+import { logger } from "../../infra/logger.js";
+import { PendingReply, type PendingReplyDoc } from "./pending-reply.model.js";
 
 export interface PendingReplyMessage {
   id: string;
@@ -14,11 +16,10 @@ export interface PendingReplyJob {
   messages: PendingReplyMessage[];
   claimId: string;
   claimedAt: Date;
+  delivered?: boolean;
 }
 
 const PENDING_REPLY_TTL_MS = 24 * 60 * 60 * 1000;
-
-const pendingReplyRepo = createRepository(config.mongodbPendingRepliesCollection);
 
 function expiryDate(now = new Date()): Date {
   return new Date(now.getTime() + PENDING_REPLY_TTL_MS);
@@ -27,19 +28,24 @@ function expiryDate(now = new Date()): Date {
 /**
  * Adds a user message to that user's short-lived reply buffer. There is only
  * one buffer document per user, regardless of how many messages they send.
+ *
+ * Uses an aggregation-pipeline update (array update expression), which
+ * Mongoose's typed query builder doesn't model — so this drops down to the
+ * native driver collection Mongoose wraps (`model.collection`) for this one
+ * operation, same as the raw MongoDB driver did before.
  */
 export async function queueUserMessage(
   userId: string,
   text: string,
-  messageId: string
+  messageId: string,
+  model: Model<PendingReplyDoc> = PendingReply
 ): Promise<void> {
   const now = new Date();
   const replyAt = new Date(now.getTime() + config.messengerReplyDebounceMs);
   const message: PendingReplyMessage = { id: messageId, text, receivedAt: now };
-  const collection = await pendingReplyRepo.collection();
 
-  await collection.updateOne(
-    { userId } as any,
+  await model.collection.updateOne(
+    { userId },
     [
       {
         $set: {
@@ -78,13 +84,15 @@ export async function queueUserMessage(
 }
 
 /** Records the 10-minute human-admin handoff without creating chat history. */
-export async function pauseUserReplies(userId: string): Promise<void> {
+export async function pauseUserReplies(
+  userId: string,
+  model: Model<PendingReplyDoc> = PendingReply
+): Promise<void> {
   const now = new Date();
   const pausedUntil = new Date(now.getTime() + config.messengerAdminPauseMs);
-  const collection = await pendingReplyRepo.collection();
 
-  await collection.updateOne(
-    { userId } as any,
+  await model.updateOne(
+    { userId },
     {
       $setOnInsert: {
         userId,
@@ -100,7 +108,7 @@ export async function pauseUserReplies(userId: string): Promise<void> {
       },
       // A pending reply must not run before the latest human handoff expires.
       $max: { replyAt: pausedUntil },
-    } as any,
+    },
     { upsert: true }
   );
 }
@@ -108,16 +116,20 @@ export async function pauseUserReplies(userId: string): Promise<void> {
 /**
  * Atomically claims one due reply. A separate claim prevents two scheduler
  * runs (or future app instances) from replying to the same user at once.
+ *
+ * Uses `findOneAndUpdate` with a `$or` filter and touches the pause window,
+ * which is simplest expressed directly against the native driver collection.
  */
-export async function claimNextDueReply(): Promise<PendingReplyJob | null> {
+export async function claimNextDueReply(
+  model: Model<PendingReplyDoc> = PendingReply
+): Promise<PendingReplyJob | null> {
   const now = new Date();
-  const collection = await pendingReplyRepo.collection();
-  const candidate = await collection.findOne(
+  const candidate = await model.collection.findOne(
     {
       status: "pending",
       hasPendingMessages: true,
       replyAt: { $lte: now },
-    } as any,
+    },
     { sort: { replyAt: 1 } }
   );
 
@@ -125,26 +137,28 @@ export async function claimNextDueReply(): Promise<PendingReplyJob | null> {
     return null;
   }
 
-  if ((candidate as any).pausedUntil && (candidate as any).pausedUntil > now) {
-    await collection.updateOne({ _id: candidate._id, status: "pending" } as any, {
-      $set: { replyAt: (candidate as any).pausedUntil, updatedAt: now },
-    });
+  if (candidate.pausedUntil && candidate.pausedUntil > now) {
+    await model.collection.updateOne(
+      { _id: candidate._id, status: "pending" },
+      { $set: { replyAt: candidate.pausedUntil, updatedAt: now } }
+    );
     return null;
   }
 
   const claimId = randomUUID();
-  const job = await collection.findOneAndUpdate(
+  const job = await model.collection.findOneAndUpdate(
     {
       _id: candidate._id,
       status: "pending",
       hasPendingMessages: true,
       replyAt: { $lte: now },
       $or: [{ pausedUntil: { $exists: false } }, { pausedUntil: { $lte: now } }],
-    } as any,
+    },
     {
       $set: {
         status: "processing",
         hasPendingMessages: false,
+        delivered: false,
         claimId,
         claimedAt: now,
         leaseUntil: new Date(now.getTime() + config.messengerReplyLeaseMs),
@@ -157,64 +171,121 @@ export async function claimNextDueReply(): Promise<PendingReplyJob | null> {
   return (job as unknown as PendingReplyJob) || null;
 }
 
-export async function wasPausedAfterClaim(userId: string, claimedAt: Date): Promise<boolean> {
-  const collection = await pendingReplyRepo.collection();
-  const state = await collection.findOne({ userId } as any, { projection: { pausedUntil: 1 } });
-  return Boolean((state as any)?.pausedUntil && (state as any).pausedUntil > claimedAt);
+export async function wasPausedAfterClaim(
+  userId: string,
+  claimedAt: Date,
+  model: Model<PendingReplyDoc> = PendingReply
+): Promise<boolean> {
+  const state = await model.findOne({ userId }).select({ pausedUntil: 1 }).lean();
+  return Boolean(state?.pausedUntil && state.pausedUntil > claimedAt);
 }
 
 export async function releaseClaim(
   job: PendingReplyJob,
-  retryDelayMs = config.messengerReplyRetryMs
+  retryDelayMs = config.messengerReplyRetryMs,
+  model: Model<PendingReplyDoc> = PendingReply
 ): Promise<void> {
-  const collection = await pendingReplyRepo.collection();
   const now = new Date();
-  await collection.updateOne({ _id: job._id, status: "processing", claimId: job.claimId } as any, {
-    $set: {
-      status: "pending",
-      hasPendingMessages: true,
-      replyAt: new Date(now.getTime() + retryDelayMs),
-      updatedAt: now,
-    },
-    $unset: { claimId: "", claimedAt: "", leaseUntil: "" },
-  });
+  await model.updateOne(
+    { _id: job._id, status: "processing", claimId: job.claimId },
+    {
+      $set: {
+        status: "pending",
+        hasPendingMessages: true,
+        replyAt: new Date(now.getTime() + retryDelayMs),
+        updatedAt: now,
+      },
+      $unset: { claimId: "", claimedAt: "", leaseUntil: "", delivered: "" },
+    }
+  );
 }
 
-/** Removes only the messages included in this claim, preserving newer ones. */
-export async function completeClaim(job: PendingReplyJob): Promise<void> {
+/**
+ * Marks that the Messenger Send API call for this claim already succeeded.
+ * Called immediately after a successful send — before conversation-memory
+ * writes or `completeClaim` — so that if the process crashes before the claim
+ * is finalized, lease reclaim knows not to resend the same reply.
+ */
+export async function markClaimDelivered(
+  job: PendingReplyJob,
+  model: Model<PendingReplyDoc> = PendingReply
+): Promise<void> {
+  await model.updateOne(
+    { _id: job._id, status: "processing", claimId: job.claimId },
+    { $set: { delivered: true, deliveredAt: new Date(), updatedAt: new Date() } }
+  );
+}
+
+/**
+ * Removes only the messages included in this claim, preserving newer ones.
+ *
+ * Uses an aggregation-pipeline update (array `$filter`/`$cond`), so this
+ * drops down to the native driver collection for the same reason as
+ * `queueUserMessage`.
+ */
+export async function completeClaim(
+  job: PendingReplyJob,
+  model: Model<PendingReplyDoc> = PendingReply
+): Promise<void> {
   const claimedMessageIds = job.messages.map((message) => message.id);
-  const collection = await pendingReplyRepo.collection();
   const now = new Date();
 
-  await collection.updateOne(
-    { _id: job._id, status: "processing", claimId: job.claimId } as any,
-    [
-      {
-        $set: {
-          messages: {
-            $filter: {
-              input: "$messages",
-              as: "message",
-              cond: { $not: [{ $in: ["$$message.id", claimedMessageIds] }] },
-            },
+  await model.collection.updateOne({ _id: job._id, status: "processing", claimId: job.claimId }, [
+    {
+      $set: {
+        messages: {
+          $filter: {
+            input: "$messages",
+            as: "message",
+            cond: { $not: [{ $in: ["$$message.id", claimedMessageIds] }] },
           },
         },
       },
-      {
-        $set: {
-          hasPendingMessages: { $gt: [{ $size: "$messages" }, 0] },
-          status: {
-            $cond: [{ $gt: [{ $size: "$messages" }, 0] }, "pending", "idle"],
-          },
-          replyAt: {
-            $cond: [{ $gt: [{ $size: "$messages" }, 0] }, "$replyAt", null],
-          },
-          updatedAt: now,
-          lastReplyAt: now,
-          expiresAt: expiryDate(now),
+    },
+    {
+      $set: {
+        hasPendingMessages: { $gt: [{ $size: "$messages" }, 0] },
+        status: {
+          $cond: [{ $gt: [{ $size: "$messages" }, 0] }, "pending", "idle"],
         },
+        replyAt: {
+          $cond: [{ $gt: [{ $size: "$messages" }, 0] }, "$replyAt", null],
+        },
+        updatedAt: now,
+        lastReplyAt: now,
+        expiresAt: expiryDate(now),
       },
-      { $unset: ["claimId", "claimedAt", "leaseUntil"] },
-    ] as any
-  );
+    },
+    { $unset: ["claimId", "claimedAt", "leaseUntil", "delivered", "deliveredAt"] },
+  ] as any);
+}
+
+/**
+ * Reclaims claims whose processing lease expired (e.g. the worker crashed
+ * mid-job). If the Send API call was already marked `delivered`, the claim is
+ * finalized without resending; otherwise it's released back to `pending` so
+ * it gets retried. This closes the gap where a crash between "message sent"
+ * and "claim completed" could otherwise cause a duplicate Messenger reply.
+ */
+export async function reclaimExpiredLeases(
+  model: Model<PendingReplyDoc> = PendingReply
+): Promise<void> {
+  const now = new Date();
+  const expiredJobs = await model.find({ status: "processing", leaseUntil: { $lt: now } }).lean();
+
+  for (const job of expiredJobs) {
+    const typedJob = job as unknown as PendingReplyJob;
+
+    if (typedJob.delivered) {
+      logger.warn(
+        `Reclaiming expired lease for ${typedJob.userId}: reply was already delivered, finalizing without resend.`
+      );
+      await completeClaim(typedJob, model);
+    } else {
+      logger.warn(
+        `Reclaiming expired lease for ${typedJob.userId}: no delivery recorded, releasing for retry.`
+      );
+      await releaseClaim(typedJob, 0, model);
+    }
+  }
 }

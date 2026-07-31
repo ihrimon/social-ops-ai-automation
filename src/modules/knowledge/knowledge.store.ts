@@ -1,12 +1,13 @@
 import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
+import type { Model } from "mongoose";
 import { config } from "../../config/env.js";
 import { logger } from "../../infra/logger.js";
-import { createRepository } from "../../integrations/mongo/repository.js";
 import { createEmbedding } from "./embedding.service.js";
+import { KnowledgeChunk, type KnowledgeChunkDoc } from "./knowledge-chunk.model.js";
 
-interface KnowledgeChunkDoc {
+interface KnowledgeChunkSeed {
   key: string;
   title: string;
   text: string;
@@ -18,10 +19,8 @@ interface KnowledgeChunkDoc {
 const KNOWLEDGE_BASE_FILE = path.join(process.cwd(), "knowledge-base.json");
 const KNOWLEDGE_RESULT_LIMIT = 5;
 
-const knowledgeRepo = createRepository<KnowledgeChunkDoc>(config.mongodbKnowledgeCollection);
-
 let vectorSearchUnavailable = false;
-let cachedKnowledgeChunks: KnowledgeChunkDoc[] | null = null;
+let cachedKnowledgeChunks: KnowledgeChunkSeed[] | null = null;
 
 function createHash(value: string): string {
   return crypto.createHash("sha256").update(value).digest("hex");
@@ -32,7 +31,7 @@ function createChunk(
   title: string,
   text: string,
   tags: string[] = []
-): KnowledgeChunkDoc {
+): KnowledgeChunkSeed {
   return {
     key,
     title,
@@ -47,7 +46,7 @@ function formatList(items: unknown[]): string {
   return items.filter(Boolean).join(", ");
 }
 
-function buildKnowledgeChunks(knowledgeBase: any): KnowledgeChunkDoc[] {
+function buildKnowledgeChunks(knowledgeBase: any): KnowledgeChunkSeed[] {
   const chunks = [
     createChunk(
       "business-profile",
@@ -102,8 +101,9 @@ async function loadKnowledgeBase(): Promise<any> {
   return JSON.parse(data);
 }
 
-export async function syncKnowledgeBase(): Promise<void> {
-  const collection = await knowledgeRepo.collection();
+export async function syncKnowledgeBase(
+  model: Model<KnowledgeChunkDoc> = KnowledgeChunk
+): Promise<void> {
   const knowledgeBase = await loadKnowledgeBase();
   const chunks = buildKnowledgeChunks(knowledgeBase);
   const activeKeys = chunks.map((chunk) => chunk.key);
@@ -111,13 +111,13 @@ export async function syncKnowledgeBase(): Promise<void> {
   await Promise.all(
     chunks.map(async (chunk) => {
       const contentHash = createHash(chunk.text);
-      const existing = await collection.findOne(
-        { key: chunk.key },
-        { projection: { _id: 0, contentHash: 1 } }
-      );
+      const existing = await model
+        .findOne({ key: chunk.key })
+        .select({ _id: 0, contentHash: 1 })
+        .lean();
 
-      if ((existing as any)?.contentHash === contentHash) {
-        await collection.updateOne(
+      if (existing?.contentHash === contentHash) {
+        await model.updateOne(
           { key: chunk.key },
           { $set: { active: true, updatedAt: new Date() } }
         );
@@ -125,7 +125,7 @@ export async function syncKnowledgeBase(): Promise<void> {
       }
 
       const embedding = await createEmbedding(`${chunk.title}\n${chunk.text}`);
-      await collection.updateOne(
+      await model.updateOne(
         { key: chunk.key },
         {
           $set: {
@@ -133,7 +133,7 @@ export async function syncKnowledgeBase(): Promise<void> {
             contentHash,
             embedding,
             updatedAt: new Date(),
-          } as any,
+          },
           $setOnInsert: { createdAt: new Date() },
         },
         { upsert: true }
@@ -141,19 +141,22 @@ export async function syncKnowledgeBase(): Promise<void> {
     })
   );
 
-  await collection.updateMany(
+  await model.updateMany(
     { source: "knowledgeBase", key: { $nin: activeKeys } },
     { $set: { active: false, updatedAt: new Date() } }
   );
 
   // Populate cache to avoid DB hits on subsequent requests when vector search is unavailable
-  cachedKnowledgeChunks = (await collection
+  cachedKnowledgeChunks = (await model
     .find({ source: "knowledgeBase", active: true })
-    .project({ _id: 0, title: 1, text: 1 })
-    .toArray()) as KnowledgeChunkDoc[];
+    .select({ _id: 0, title: 1, text: 1 })
+    .lean()) as unknown as KnowledgeChunkSeed[];
 }
 
-export async function getRelevantKnowledge(userMessage: string): Promise<KnowledgeChunkDoc[]> {
+export async function getRelevantKnowledge(
+  userMessage: string,
+  model: Model<KnowledgeChunkDoc> = KnowledgeChunk
+): Promise<KnowledgeChunkSeed[]> {
   // If MongoDB URI is not set, immediately fallback to local knowledge-base.json to avoid crashes
   if (!config.mongodbUri) {
     if (cachedKnowledgeChunks) {
@@ -171,19 +174,17 @@ export async function getRelevantKnowledge(userMessage: string): Promise<Knowled
     }
   }
 
-  const collection = await knowledgeRepo.collection();
-
   // If vector search is offline or user query is empty, use memory cache directly to save a DB roundtrip
   if (vectorSearchUnavailable || !userMessage?.trim()) {
     if (cachedKnowledgeChunks) {
       return cachedKnowledgeChunks.slice(0, KNOWLEDGE_RESULT_LIMIT);
     }
-    const chunks = (await collection
+    const chunks = (await model
       .find({ source: "knowledgeBase", active: true })
       .sort({ key: 1 })
       .limit(KNOWLEDGE_RESULT_LIMIT)
-      .project({ _id: 0, title: 1, text: 1 })
-      .toArray()) as KnowledgeChunkDoc[];
+      .select({ _id: 0, title: 1, text: 1 })
+      .lean()) as unknown as KnowledgeChunkSeed[];
     cachedKnowledgeChunks = chunks;
     return chunks;
   }
@@ -192,7 +193,7 @@ export async function getRelevantKnowledge(userMessage: string): Promise<Knowled
     const queryVector = await createEmbedding(userMessage);
 
     // Run vector search and text search in parallel
-    const vectorSearchPromise = collection
+    const vectorSearchPromise = model
       .aggregate([
         {
           $vectorSearch: {
@@ -213,21 +214,20 @@ export async function getRelevantKnowledge(userMessage: string): Promise<Knowled
           },
         },
       ])
-      .toArray()
       .catch((err) => {
         logger.warn("Vector search failed in hybrid query:", { error: err.message });
         return [];
       });
 
-    const textSearchPromise = collection
+    const textSearchPromise = model
       .find({
         source: "knowledgeBase",
         active: true,
         $text: { $search: userMessage },
       } as any)
       .limit(KNOWLEDGE_RESULT_LIMIT * 2)
-      .project({ _id: 0, title: 1, text: 1, score: { $meta: "textScore" } })
-      .toArray()
+      .select({ _id: 0, title: 1, text: 1, score: { $meta: "textScore" } })
+      .lean()
       .catch((err) => {
         logger.warn("Text search failed in hybrid query:", { error: err.message });
         return [];
@@ -239,12 +239,12 @@ export async function getRelevantKnowledge(userMessage: string): Promise<Knowled
       if (cachedKnowledgeChunks) {
         return cachedKnowledgeChunks.slice(0, KNOWLEDGE_RESULT_LIMIT);
       }
-      return collection
+      return (await model
         .find({ source: "knowledgeBase", active: true })
         .sort({ key: 1 })
         .limit(KNOWLEDGE_RESULT_LIMIT)
-        .project({ _id: 0, title: 1, text: 1 })
-        .toArray() as Promise<KnowledgeChunkDoc[]>;
+        .select({ _id: 0, title: 1, text: 1 })
+        .lean()) as unknown as KnowledgeChunkSeed[];
     }
 
     // Combine results using Reciprocal Rank Fusion (RRF)
@@ -289,12 +289,12 @@ export async function getRelevantKnowledge(userMessage: string): Promise<Knowled
       return cachedKnowledgeChunks.slice(0, KNOWLEDGE_RESULT_LIMIT);
     }
 
-    const chunks = (await collection
+    const chunks = (await model
       .find({ source: "knowledgeBase", active: true })
       .sort({ key: 1 })
       .limit(KNOWLEDGE_RESULT_LIMIT)
-      .project({ _id: 0, title: 1, text: 1 })
-      .toArray()) as KnowledgeChunkDoc[];
+      .select({ _id: 0, title: 1, text: 1 })
+      .lean()) as unknown as KnowledgeChunkSeed[];
     cachedKnowledgeChunks = chunks;
     return chunks;
   }

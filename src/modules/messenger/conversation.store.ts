@@ -1,25 +1,13 @@
+import type { Model } from "mongoose";
 import { config } from "../../config/env.js";
 import { logger } from "../../infra/logger.js";
-import { createRepository } from "../../integrations/mongo/repository.js";
+import { errorMessage } from "../../infra/errors.js";
 import { createEmbedding } from "../knowledge/embedding.service.js";
-
-interface ConversationMessageDoc {
-  userId: string;
-  role: string;
-  text: string;
-  hasEmbedding: boolean;
-  embedding?: number[];
-  createdAt: Date;
-  isHumanAdmin?: boolean;
-}
+import { ConversationMessage, type ConversationMessageDoc } from "./conversation.model.js";
 
 const MAX_MESSAGES_PER_USER = 60;
 const RECENT_MESSAGES_PER_REPLY = 6;
 const RELEVANT_MESSAGES_PER_REPLY = 4;
-
-const conversationRepo = createRepository<ConversationMessageDoc>(
-  config.mongodbConversationsCollection
-);
 
 let vectorSearchUnavailable = false;
 
@@ -31,18 +19,22 @@ function normalizeMessage(message: any) {
   };
 }
 
-async function getRecentMessages(collection: any, userId: string) {
-  const messages = await collection
+async function getRecentMessages(model: Model<ConversationMessageDoc>, userId: string) {
+  const messages = await model
     .find({ userId })
     .sort({ createdAt: -1 })
     .limit(RECENT_MESSAGES_PER_REPLY)
-    .project({ _id: 0, role: 1, text: 1, createdAt: 1 })
-    .toArray();
+    .select({ _id: 0, role: 1, text: 1, createdAt: 1 })
+    .lean();
 
   return messages.reverse().map(normalizeMessage);
 }
 
-async function getRelevantMessages(collection: any, userId: string, userMessage: string) {
+async function getRelevantMessages(
+  model: Model<ConversationMessageDoc>,
+  userId: string,
+  userMessage: string
+) {
   if (vectorSearchUnavailable || !userMessage) {
     return [];
   }
@@ -50,75 +42,74 @@ async function getRelevantMessages(collection: any, userId: string, userMessage:
   try {
     const safeQuery = String(userMessage).slice(0, 1000);
     const queryVector = await createEmbedding(safeQuery);
-    const messages = await collection
-      .aggregate([
-        {
-          $vectorSearch: {
-            index: config.mongodbConversationVectorIndex,
-            path: "embedding",
-            queryVector,
-            numCandidates: 50,
-            limit: RELEVANT_MESSAGES_PER_REPLY,
-            filter: { userId, hasEmbedding: true },
-          },
+    const messages = await model.aggregate([
+      {
+        $vectorSearch: {
+          index: config.mongodbConversationVectorIndex,
+          path: "embedding",
+          queryVector,
+          numCandidates: 50,
+          limit: RELEVANT_MESSAGES_PER_REPLY,
+          filter: { userId, hasEmbedding: true },
         },
-        {
-          $project: {
-            _id: 0,
-            role: 1,
-            text: 1,
-            createdAt: 1,
-            score: { $meta: "vectorSearchScore" },
-          },
+      },
+      {
+        $project: {
+          _id: 0,
+          role: 1,
+          text: 1,
+          createdAt: 1,
+          score: { $meta: "vectorSearchScore" },
         },
-      ])
-      .toArray();
+      },
+    ]);
 
     return messages.map(normalizeMessage);
   } catch (error) {
     vectorSearchUnavailable = true;
     logger.warn("MongoDB vector search unavailable. Falling back to recent messages only:", {
-      error: (error as Error).message,
+      error: errorMessage(error),
     });
     return [];
   }
 }
 
-async function trimOldMessages(collection: any, userId: string) {
-  const oldMessages = await collection
+async function trimOldMessages(model: Model<ConversationMessageDoc>, userId: string) {
+  const oldMessages = await model
     .find({ userId })
     .sort({ createdAt: -1 })
     .skip(MAX_MESSAGES_PER_USER)
-    .project({ _id: 1 })
-    .toArray();
+    .select({ _id: 1 })
+    .lean();
 
   if (oldMessages.length) {
-    await collection.deleteMany({
-      _id: { $in: oldMessages.map((message: any) => message._id) },
+    await model.deleteMany({
+      _id: { $in: oldMessages.map((message) => message._id) },
     });
   }
 }
 
-export async function getConversationContext(userId: string, userMessage = "") {
+export async function getConversationContext(
+  userId: string,
+  userMessage = "",
+  model: Model<ConversationMessageDoc> = ConversationMessage
+) {
   if (!config.mongodbUri) {
     logger.warn("MONGODB_URI is not set. Skipping conversation memory retrieval.");
     return { recentMessages: [], relevantMemories: [] };
   }
-  const collection = await conversationRepo.collection();
 
   const [recentMessages, relevantMemories] = await Promise.all([
-    getRecentMessages(collection, userId),
-    getRelevantMessages(collection, userId, userMessage),
+    getRecentMessages(model, userId),
+    getRelevantMessages(model, userId, userMessage),
   ]);
 
-  const recentKeys = new Set(
-    recentMessages.map((message: any) => `${message.role}:${message.text}`)
-  );
+  const recentKeys = new Set(recentMessages.map((message) => `${message.role}:${message.text}`));
 
   return {
     recentMessages,
     relevantMemories: relevantMemories.filter(
-      (message: any) => !recentKeys.has(`${message.role}:${message.text}`)
+      (message) => !recentKeys.has(`${message.role}:${message.text}`)
     ),
   };
 }
@@ -127,13 +118,13 @@ export async function addConversationMessage(
   userId: string,
   role: string,
   text: string,
-  metadata: Record<string, unknown> = {}
+  metadata: Record<string, unknown> = {},
+  model: Model<ConversationMessageDoc> = ConversationMessage
 ): Promise<void> {
   if (!config.mongodbUri) {
     logger.warn("MONGODB_URI is not set. Skipping saving conversation message.");
     return;
   }
-  const collection = await conversationRepo.collection();
   const createdAt = new Date();
 
   const safeText = String(text || "").trim();
@@ -141,7 +132,7 @@ export async function addConversationMessage(
   const shouldEmbed = role === "user" && truncatedText.length >= 12;
   const embedding = shouldEmbed ? await createEmbedding(truncatedText) : null;
 
-  await collection.insertOne({
+  await model.create({
     userId,
     role,
     text: truncatedText,
@@ -149,25 +140,26 @@ export async function addConversationMessage(
     ...(embedding ? { embedding } : {}),
     createdAt,
     ...metadata,
-  } as any);
+  });
 
-  await trimOldMessages(collection, userId);
+  await trimOldMessages(model, userId);
 }
 
-export async function getLastHumanInteractionTime(userId: string): Promise<Date | null> {
+export async function getLastHumanInteractionTime(
+  userId: string,
+  model: Model<ConversationMessageDoc> = ConversationMessage
+): Promise<Date | null> {
   if (!config.mongodbUri) {
     return null;
   }
   try {
-    const collection = await conversationRepo.collection();
-    const lastMessage = await collection.findOne({ userId, isHumanAdmin: true } as any, {
-      sort: { createdAt: -1 },
-    });
+    const lastMessage = await model
+      .findOne({ userId, isHumanAdmin: true })
+      .sort({ createdAt: -1 })
+      .lean();
     return lastMessage ? new Date((lastMessage as any).createdAt) : null;
   } catch (error) {
-    logger.error("Failed to fetch last human interaction time:", {
-      error: (error as Error).message,
-    });
+    logger.error("Failed to fetch last human interaction time:", { error: errorMessage(error) });
     return null;
   }
 }

@@ -18,6 +18,7 @@ import {
   isValidWebhookVerification,
   verifyFacebookSignature,
 } from "../integrations/facebook/webhook-verifier.js";
+import { webhookPayloadSchema, type WebhookPayload } from "./webhook.schema.js";
 
 const MAX_BODY_BYTES = "1mb";
 
@@ -156,7 +157,18 @@ async function handleWebhookPost(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const payload = req.body;
+    const parseResult = webhookPayloadSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      logger.warn("Webhook payload failed validation:", {
+        issues: parseResult.error.issues.map(
+          (issue) => `${issue.path.join(".")}: ${issue.message}`
+        ),
+      });
+      res.status(400).send("Bad Request");
+      return;
+    }
+
+    const payload: WebhookPayload = parseResult.data;
     logger.info("Webhook POST received payload:", { payload });
 
     res.status(200).send("EVENT_RECEIVED");
@@ -166,14 +178,14 @@ async function handleWebhookPost(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const events = payload.entry.flatMap((entry: any) => entry.messaging || []);
+    const events = payload.entry.flatMap((entry) => entry.messaging || []);
     // Preserve Messenger's event order. This matters when an admin handoff and
     // a user message arrive in the same webhook payload.
     for (const event of events) {
       await processMessagingEvent(event);
     }
 
-    const commentChanges = payload.entry.flatMap((entry: any) => entry.changes || []);
+    const commentChanges = payload.entry.flatMap((entry) => entry.changes || []);
     if (commentChanges.length) {
       logger.info(`Processing ${commentChanges.length} Facebook Page feed change(s).`);
     }

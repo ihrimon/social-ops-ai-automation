@@ -1,26 +1,21 @@
 import { config } from "../../config/env.js";
 import { logger } from "../../infra/logger.js";
-import { createRepository } from "../../integrations/mongo/repository.js";
-
-const dedupeRepo = createRepository(config.mongodbMessageDedupeCollection);
+import { errorMessage } from "../../infra/errors.js";
+import { MessageDedupe, type MessageDedupeDoc } from "./dedupe.model.js";
+import type { Model } from "mongoose";
 
 const botSentMessageMemory = new Set<string>();
 
 export async function rememberIncomingMessage(
   messageId: string,
-  senderId: string
+  senderId: string,
+  model: Model<MessageDedupeDoc> = MessageDedupe
 ): Promise<boolean> {
-  const collection = await dedupeRepo.collection();
-
   try {
-    await collection.insertOne({
-      messageId,
-      senderId,
-      createdAt: new Date(),
-    } as any);
+    await model.create({ messageId, senderId });
     return true;
   } catch (error) {
-    if ((error as any).code === 11000) {
+    if ((error as { code?: number }).code === 11000) {
       return false;
     }
 
@@ -28,7 +23,10 @@ export async function rememberIncomingMessage(
   }
 }
 
-export async function rememberBotSentMessage(messageId: string): Promise<void> {
+export async function rememberBotSentMessage(
+  messageId: string,
+  model: Model<MessageDedupeDoc> = MessageDedupe
+): Promise<void> {
   if (!messageId) return;
   botSentMessageMemory.add(messageId);
   setTimeout(() => botSentMessageMemory.delete(messageId), 120000);
@@ -36,35 +34,28 @@ export async function rememberBotSentMessage(messageId: string): Promise<void> {
   if (!config.mongodbUri) return;
 
   try {
-    const collection = await dedupeRepo.collection();
-    await collection.insertOne({
-      messageId: `bot_sent:${messageId}`,
-      isBotSent: true,
-      createdAt: new Date(),
-    } as any);
+    await model.create({ messageId: `bot_sent:${messageId}`, isBotSent: true });
   } catch (error) {
-    if ((error as any).code !== 11000) {
-      logger.error("Failed to store bot sent message ID in DB:", {
-        error: (error as Error).message,
-      });
+    if ((error as { code?: number }).code !== 11000) {
+      logger.error("Failed to store bot sent message ID in DB:", { error: errorMessage(error) });
     }
   }
 }
 
-export async function isBotSentMessage(messageId: string): Promise<boolean> {
+export async function isBotSentMessage(
+  messageId: string,
+  model: Model<MessageDedupeDoc> = MessageDedupe
+): Promise<boolean> {
   if (!messageId) return false;
   if (botSentMessageMemory.has(messageId)) return true;
 
   if (!config.mongodbUri) return false;
 
   try {
-    const collection = await dedupeRepo.collection();
-    const doc = await collection.findOne({ messageId: `bot_sent:${messageId}` } as any);
+    const doc = await model.exists({ messageId: `bot_sent:${messageId}` });
     return Boolean(doc);
   } catch (error) {
-    logger.error("Failed to check bot sent message ID from DB:", {
-      error: (error as Error).message,
-    });
+    logger.error("Failed to check bot sent message ID from DB:", { error: errorMessage(error) });
     return false;
   }
 }

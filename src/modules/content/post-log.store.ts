@@ -1,12 +1,12 @@
-import { config } from "../../config/env.js";
-import { createRepository } from "../../integrations/mongo/repository.js";
+import type { Model } from "mongoose";
+import { PostLog, type PostLogDoc } from "./post-log.model.js";
 
-const postLogRepo = createRepository(config.mongodbPostLogsCollection);
-
-export async function createPostLog(data: Record<string, unknown> = {}) {
-  const collection = await postLogRepo.collection();
+export async function createPostLog(
+  data: Record<string, unknown> = {},
+  model: Model<PostLogDoc> = PostLog
+) {
   const now = new Date();
-  const result = await collection.insertOne({
+  const doc = await model.create({
     status: "started",
     topic: null,
     article: null,
@@ -14,21 +14,39 @@ export async function createPostLog(data: Record<string, unknown> = {}) {
     ...data,
     createdAt: now,
     updatedAt: now,
-  } as any);
+  });
 
-  return result.insertedId;
+  return doc._id;
 }
 
-export async function updatePostLog(logId: unknown, data: Record<string, unknown> = {}) {
+export async function updatePostLog(
+  logId: unknown,
+  data: Record<string, unknown> = {},
+  model: Model<PostLogDoc> = PostLog
+) {
   if (!logId) {
     return;
   }
 
-  const collection = await postLogRepo.collection();
-  await collection.updateOne({ _id: logId } as any, {
-    $set: {
-      ...data,
-      updatedAt: new Date(),
-    },
-  });
+  await model.updateOne(
+    { _id: logId },
+    {
+      $set: {
+        ...data,
+        updatedAt: new Date(),
+      },
+    }
+  );
+}
+
+/**
+ * Idempotency check for the daily post job: true if a post already succeeded
+ * for this calendar-day key, so a duplicate cron trigger (double-fire, manual
+ * re-run, restart mid-cycle) doesn't publish the same day's post twice.
+ */
+export async function hasPostedOnDateKey(
+  postDateKey: string,
+  model: Model<PostLogDoc> = PostLog
+): Promise<boolean> {
+  return Boolean(await model.exists({ status: "posted", postDateKey }));
 }

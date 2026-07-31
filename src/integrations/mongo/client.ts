@@ -1,8 +1,8 @@
-import { Collection, Document, MongoClient } from "mongodb";
+import mongoose from "mongoose";
 import { config } from "../../config/env.js";
 import { ConfigError } from "../../infra/errors.js";
 
-let mongoClientPromise: Promise<MongoClient> | null = null;
+let connectionPromise: Promise<typeof mongoose> | null = null;
 
 function requireMongoUri(): void {
   if (!config.mongodbUri) {
@@ -10,38 +10,30 @@ function requireMongoUri(): void {
   }
 }
 
-export async function getMongoClient(): Promise<MongoClient> {
+/** Establishes (or reuses) the single Mongoose connection for the app. */
+export function connectMongo(): Promise<typeof mongoose> {
   requireMongoUri();
 
-  if (!mongoClientPromise) {
-    const client = new MongoClient(config.mongodbUri as string, {
+  if (!connectionPromise) {
+    connectionPromise = mongoose.connect(config.mongodbUri as string, {
+      dbName: config.mongodbDbName,
       maxPoolSize: config.mongodbMaxPoolSize,
       minPoolSize: config.mongodbMinPoolSize,
       serverSelectionTimeoutMS: config.mongodbServerSelectionTimeoutMs,
     });
-
-    mongoClientPromise = client.connect();
   }
 
-  return mongoClientPromise;
+  return connectionPromise;
 }
 
-export async function getMongoDb() {
-  const client = await getMongoClient();
-  return client.db(config.mongodbDbName);
-}
-
-export async function getMongoCollection<T extends Document = Document>(
-  collectionName: string
-): Promise<Collection<T>> {
-  const db = await getMongoDb();
-  return db.collection<T>(collectionName);
+/** Mongoose connection readyState: 0=disconnected, 1=connected, 2=connecting, 3=disconnecting. */
+export function isMongoConnected(): boolean {
+  return mongoose.connection.readyState === 1;
 }
 
 export async function closeMongoClient(): Promise<void> {
-  if (mongoClientPromise) {
-    const client = await mongoClientPromise;
-    await client.close();
-    mongoClientPromise = null;
+  if (connectionPromise) {
+    await mongoose.disconnect();
+    connectionPromise = null;
   }
 }

@@ -11,19 +11,20 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "backup": "node scripts/backup.mjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
-  "description": "",
+  "description": "AI-driven Facebook Page automation: scheduled article posts, Messenger reply generation with conversation memory, comment moderation, and a Mongo-backed RAG knowledge base powered by Google Gemini.",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "axios": "^1.11.0",
     "dotenv": "^17.2.1",
     "express": "^5.2.1",
-    "mongodb": "^6.21.0",
+    "mongoose": "^9.9.0",
     "node-cron": "^4.2.1",
     "zod": "^3.25.76"
   },

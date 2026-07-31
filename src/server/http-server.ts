@@ -10,6 +10,7 @@ import {
   errorMessage,
 } from "../infra/errors.js";
 import { webhookRouter } from "./webhook-controller.js";
+import { healthRouter } from "./health-controller.js";
 
 const WEBHOOK_PATH = "/webhook";
 
@@ -51,10 +52,13 @@ function createApp(): Application {
     res.status(200).json({
       status: "ok",
       webhook: WEBHOOK_PATH,
+      health: "/health",
+      ready: "/ready",
       dailyPost: "9:00 PM Asia/Dhaka",
     });
   });
 
+  app.use(healthRouter);
   app.use(WEBHOOK_PATH, webhookRouter);
 
   app.use(notFoundHandler);

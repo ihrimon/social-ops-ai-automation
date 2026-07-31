@@ -1,18 +1,10 @@
+import type { Model } from "mongoose";
 import { config } from "../../config/env.js";
 import { logger } from "../../infra/logger.js";
 import { generateContent } from "../../ai/client.js";
 import { ValidationError, errorMessage } from "../../infra/errors.js";
 import { MONTHLY_TOPICS_PROMPT } from "../../ai/prompts/topics.prompt.js";
-import { createRepository } from "../../integrations/mongo/repository.js";
-
-interface TopicDoc {
-  topic: string;
-  used: boolean;
-  createdAt: Date;
-  usedAt: Date | null;
-}
-
-const topicsRepo = createRepository<TopicDoc>(config.mongodbTopicsCollection);
+import { Topic, type TopicDoc } from "./topic.model.js";
 
 export async function generateMonthlyTopics(): Promise<string[]> {
   try {
@@ -35,28 +27,31 @@ export async function generateMonthlyTopics(): Promise<string[]> {
   }
 }
 
-export async function addTopics(topicsArray: string[]): Promise<void> {
+export async function addTopics(
+  topicsArray: string[],
+  model: Model<TopicDoc> = Topic
+): Promise<void> {
   if (!Array.isArray(topicsArray) || topicsArray.length === 0) {
     return;
   }
-  const collection = await topicsRepo.collection();
-  const docs: TopicDoc[] = topicsArray.map((topic) => ({
-    topic,
-    used: false,
-    createdAt: new Date(),
-    usedAt: null,
-  }));
-  await collection.insertMany(docs);
+  await model.insertMany(
+    topicsArray.map((topic) => ({
+      topic,
+      used: false,
+      createdAt: new Date(),
+      usedAt: null,
+    }))
+  );
 }
 
-export async function getNextTopicFromDb(): Promise<{ topic: string; remaining: number } | null> {
-  const collection = await topicsRepo.collection();
-
+export async function getNextTopicFromDb(
+  model: Model<TopicDoc> = Topic
+): Promise<{ topic: string; remaining: number } | null> {
   // Atomically find and mark the oldest unused topic
-  const nextDoc = await collection.findOneAndUpdate(
+  const nextDoc = await model.findOneAndUpdate(
     { used: false },
     { $set: { used: true, usedAt: new Date() } },
-    { sort: { createdAt: 1 }, returnDocument: "after" }
+    { sort: { createdAt: 1 }, new: true }
   );
 
   if (!nextDoc) {
@@ -64,15 +59,14 @@ export async function getNextTopicFromDb(): Promise<{ topic: string; remaining: 
   }
 
   // Get remaining unused topics count
-  const remaining = await collection.countDocuments({ used: false });
+  const remaining = await model.countDocuments({ used: false });
 
   return {
-    topic: (nextDoc as any).topic,
+    topic: nextDoc.topic,
     remaining,
   };
 }
 
-export async function getUnusedTopicCount(): Promise<number> {
-  const collection = await topicsRepo.collection();
-  return collection.countDocuments({ used: false });
+export async function getUnusedTopicCount(model: Model<TopicDoc> = Topic): Promise<number> {
+  return model.countDocuments({ used: false });
 }

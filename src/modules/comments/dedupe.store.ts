@@ -1,25 +1,17 @@
-import { config } from "../../config/env.js";
-import { createRepository } from "../../integrations/mongo/repository.js";
-
-const commentDedupeRepo = createRepository(config.mongodbCommentDedupeCollection);
+import type { Model } from "mongoose";
+import { CommentDedupe, type CommentDedupeDoc } from "./dedupe.model.js";
 
 export async function rememberIncomingComment(
   commentId: string,
   postId: string,
-  commenterId: string
+  commenterId: string,
+  model: Model<CommentDedupeDoc> = CommentDedupe
 ): Promise<boolean> {
-  const collection = await commentDedupeRepo.collection();
-
   try {
-    await collection.insertOne({
-      commentId,
-      postId,
-      commenterId,
-      createdAt: new Date(),
-    } as any);
+    await model.create({ commentId, postId, commenterId });
     return true;
   } catch (error) {
-    if ((error as any).code === 11000) {
+    if ((error as { code?: number }).code === 11000) {
       return false;
     }
     throw error;
@@ -28,7 +20,9 @@ export async function rememberIncomingComment(
 
 // Keep a failed event eligible for a later retry instead of permanently
 // suppressing it because the Graph API or AI provider had a temporary error.
-export async function forgetIncomingComment(commentId: string): Promise<void> {
-  const collection = await commentDedupeRepo.collection();
-  await collection.deleteOne({ commentId } as any);
+export async function forgetIncomingComment(
+  commentId: string,
+  model: Model<CommentDedupeDoc> = CommentDedupe
+): Promise<void> {
+  await model.deleteOne({ commentId });
 }

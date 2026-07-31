@@ -7,11 +7,20 @@ import {
   generateMonthlyTopics,
   getNextTopicFromDb,
 } from "../modules/content/topic.service.js";
-import { createPostLog, updatePostLog } from "../modules/content/post-log.store.js";
+import {
+  createPostLog,
+  hasPostedOnDateKey,
+  updatePostLog,
+} from "../modules/content/post-log.store.js";
 import { createPublicPost } from "../integrations/facebook/poster.js";
 
 const TIMEZONE = "Asia/Dhaka";
 const DAILY_POST_TIME = "0 21 * * *";
+
+/** Calendar-day key in the target timezone, e.g. "2026-07-31" — the idempotency key for the daily post. */
+function todayDateKey(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date());
+}
 
 async function getNextTopic() {
   let result = await getNextTopicFromDb();
@@ -29,12 +38,29 @@ async function getNextTopic() {
 
 async function runGenerator(): Promise<void> {
   let postLogId = null;
+  const postDateKey = todayDateKey();
 
   try {
+    // Idempotency guard: a duplicate cron fire, manual re-trigger, or restart
+    // mid-cycle must not publish the same calendar day's post twice.
+    if (await hasPostedOnDateKey(postDateKey)) {
+      logger.warn(`A post already succeeded for ${postDateKey}. Skipping this run.`);
+      await createPostLog({
+        status: "skipped",
+        reason: `Already posted for ${postDateKey}`,
+        postDateKey,
+        startedAt: new Date(),
+        finishedAt: new Date(),
+        timezone: TIMEZONE,
+      });
+      return;
+    }
+
     postLogId = await createPostLog({
       status: "started",
       startedAt: new Date(),
       timezone: TIMEZONE,
+      postDateKey,
     });
 
     logger.info("Starting new text post cycle at:", {

@@ -8,6 +8,8 @@ import {
 import {
   claimNextDueReply,
   completeClaim,
+  markClaimDelivered,
+  reclaimExpiredLeases,
   releaseClaim,
   wasPausedAfterClaim,
   type PendingReplyJob,
@@ -44,6 +46,9 @@ async function processPendingReply(job: PendingReplyJob): Promise<void> {
       throw new Error("Messenger did not return a message ID.");
     }
 
+    // Record delivery immediately, before any further work — if the process
+    // crashes before completeClaim runs, lease reclaim must not resend this.
+    await markClaimDelivered(job);
     await rememberBotSentMessage(sentResult.message_id);
 
     // Delivery succeeded. Do not retry the message just because storing its
@@ -83,6 +88,8 @@ async function runPendingReplyWorker(): Promise<void> {
 
   pendingReplyWorkerRunning = true;
   try {
+    await reclaimExpiredLeases();
+
     const jobs = [];
     for (let index = 0; index < config.messengerReplyConcurrency; index += 1) {
       const job = await claimNextDueReply();
