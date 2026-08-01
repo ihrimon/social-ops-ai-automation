@@ -95,6 +95,19 @@ export const mongoConfig = {
   serverSelectionTimeoutMs: Number(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || 5000),
 };
 
+/**
+ * Comment-moderation polling fallback — Graph API `feed` webhooks are
+ * unreliable for some Pages (a known "New Pages Experience" quirk), so this
+ * worker periodically fetches recent posts/comments directly as a
+ * guaranteed-to-work backup. Safe to run alongside the webhook path since
+ * both share the same comment dedupe store.
+ */
+export const commentsConfig = {
+  pollMs: Number(process.env.COMMENT_POLL_MS || 60 * 1000),
+  postsToCheck: Number(process.env.COMMENT_POLL_POSTS_LIMIT || 5),
+  commentsPerPost: Number(process.env.COMMENT_POLL_COMMENTS_LIMIT || 25),
+};
+
 /** Messenger consolidated-reply debounce queue/worker tuning. */
 export const messengerConfig = {
   replyDebounceMs: Number(process.env.MESSENGER_REPLY_DEBOUNCE_MS || 20 * 1000),
@@ -113,6 +126,7 @@ export const config = {
   facebook: facebookConfig,
   server: serverConfig,
   mongo: mongoConfig,
+  comments: commentsConfig,
   messenger: messengerConfig,
   app: appConfig,
   monitoring: monitoringConfig,

@@ -4,6 +4,7 @@ import { initDatabase } from "./integrations/mongo/db-init.js";
 import { closeMongoClient } from "./integrations/mongo/client.js";
 import { scheduleDailyPostJob } from "./jobs/daily-post-job.js";
 import { startPendingReplyWorker } from "./jobs/pending-reply-worker.js";
+import { startCommentPollWorker } from "./jobs/comment-poll-worker.js";
 import { startWebhookServer } from "./server/http-server.js";
 
 async function shutdown(
@@ -40,6 +41,7 @@ async function bootstrap(): Promise<void> {
   });
 
   startPendingReplyWorker();
+  startCommentPollWorker();
 
   const webhookServer = startWebhookServer();
 

@@ -5,15 +5,7 @@ import { errorMessage } from "../infra/errors.js";
 import { addConversationMessage } from "../modules/messenger/conversation.store.js";
 import { pauseUserReplies, queueUserMessage } from "../modules/messenger/queue.worker.js";
 import { isBotSentMessage, rememberIncomingMessage } from "../modules/messenger/dedupe.store.js";
-import {
-  forgetIncomingComment,
-  rememberIncomingComment,
-} from "../modules/comments/dedupe.store.js";
-import {
-  generateFacebookCommentReply,
-  getFacebookPostContext,
-  replyToFacebookComment,
-} from "../modules/comments/comment.service.js";
+import { moderateComment } from "../modules/comments/comment.service.js";
 import {
   isValidWebhookVerification,
   verifyFacebookSignature,
@@ -117,34 +109,7 @@ async function processCommentChange(change: any): Promise<void> {
     return;
   }
 
-  if (!(await rememberIncomingComment(commentId, postId, commenterId))) {
-    logger.info(`Duplicate Facebook comment event ignored: ${commentId}`);
-    return;
-  }
-
-  try {
-    logger.info(`Fetching post context for Facebook comment ${commentId}.`);
-    const postText = await getFacebookPostContext(postId);
-    logger.info(
-      `Post context loaded for ${commentId} (${postText.length} characters). Generating AI decision.`
-    );
-    const reply = await generateFacebookCommentReply(postText, commentText);
-    if (!reply) {
-      logger.info(
-        `Facebook comment ${commentId} was classified as non-service-related; no reply sent.`
-      );
-      return;
-    }
-
-    logger.info(`Service-related Facebook comment detected (${commentId}). Sending public reply.`);
-    await replyToFacebookComment(commentId, reply);
-    logger.info(`Sent Facebook comment reply for ${commentId}.`);
-  } catch (error) {
-    // The Graph API's own error detail is already embedded in error.message
-    // by integrations/facebook/graph-client.ts, so nothing else to unwrap here.
-    logger.error(`Facebook comment reply failed for ${commentId}:`, { error: errorMessage(error) });
-    await forgetIncomingComment(commentId);
-  }
+  await moderateComment({ commentId, postId, commenterId, commentText });
 }
 
 async function handleWebhookPost(req: Request, res: Response): Promise<void> {
