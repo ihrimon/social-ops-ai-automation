@@ -1,21 +1,21 @@
 import cron from "node-cron";
-import { logger } from "../infra/logger.js";
 import { errorMessage } from "../infra/errors.js";
+import { logger } from "../infra/logger.js";
+import { createPublicPost } from "../integrations/facebook/poster.js";
 import { generateArticle } from "../modules/content/article.service.js";
-import {
-  addTopics,
-  generateMonthlyTopics,
-  getNextTopicFromDb,
-} from "../modules/content/topic.service.js";
 import {
   createPostLog,
   hasPostedOnDateKey,
   updatePostLog,
 } from "../modules/content/post-log.store.js";
-import { createPublicPost } from "../integrations/facebook/poster.js";
+import {
+  addTopics,
+  generateMonthlyTopics,
+  getNextTopicFromDb,
+} from "../modules/content/topic.service.js";
 
 const TIMEZONE = "Asia/Dhaka";
-const DAILY_POST_TIME = "0 21 * * *";
+const DAILY_POST_TIME = "30 13 * * *";
 
 /** Calendar-day key in the target timezone, e.g. "2026-07-31" — the idempotency key for the daily post. */
 function todayDateKey(): string {
@@ -112,16 +112,16 @@ async function runGenerator(): Promise<void> {
   }
 }
 
-/** Schedules the daily 9:00 PM Asia/Dhaka text-post generation cycle. */
+/** Schedules the daily 1:30 PM Asia/Dhaka text-post generation cycle. */
 export function scheduleDailyPostJob(): void {
   cron.schedule(
     DAILY_POST_TIME,
     async () => {
-      logger.info("Daily 9:00 PM post job triggered.");
+      logger.info("Daily 1:30 PM post job triggered.");
       await runGenerator();
     },
     { timezone: TIMEZONE }
   );
 
-  logger.info("Background worker started. Text posts are scheduled daily at 9:00 PM Asia/Dhaka.");
+  logger.info("Background worker started. Text posts are scheduled daily at 1:30 PM Asia/Dhaka.");
 }

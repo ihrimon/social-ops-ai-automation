@@ -51,7 +51,7 @@ export async function getNextTopicFromDb(
   const nextDoc = await model.findOneAndUpdate(
     { used: false },
     { $set: { used: true, usedAt: new Date() } },
-    { sort: { createdAt: 1 }, new: true }
+    { sort: { createdAt: 1 }, returnDocument: "after" }
   );
 
   if (!nextDoc) {

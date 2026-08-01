@@ -54,7 +54,7 @@ function createApp(): Application {
       webhook: WEBHOOK_PATH,
       health: "/health",
       ready: "/ready",
-      dailyPost: "9:00 PM Asia/Dhaka",
+      dailyPost: "1:30 PM Asia/Dhaka",
     });
   });
 

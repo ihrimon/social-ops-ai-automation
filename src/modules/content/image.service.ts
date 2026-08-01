@@ -1,8 +1,15 @@
-import { aiConfig } from "../../config/env.js";
+import { v2 as cloudinary } from "cloudinary";
+import { aiConfig, cloudinaryConfig } from "../../config/env.js";
 import { logger } from "../../infra/logger.js";
 
-const HORDE_API_BASE = "https://aihorde.net/api/v2";
+const HORDE_API_BASE = aiConfig.hordeApiBase;
 const ANON_API_KEY = aiConfig.aiHordeApiKey;
+
+cloudinary.config({
+  cloud_name: cloudinaryConfig.cloudName,
+  api_key: cloudinaryConfig.apiKey,
+  api_secret: cloudinaryConfig.apiSecret,
+});
 
 // AI Horde dynamically lowers resolution limits during heavy demand.
 // 512x512 is the base SD resolution and always accepted by the anon key.
@@ -91,33 +98,20 @@ export async function generateImage(data: { inputs?: string }): Promise<string |
 
     logger.info(`Generated image URL: ${imageUrl}`);
 
-    // Step 3: Upload to imgbb for a stable permanent URL
-    const imageFetch = await fetch(imageUrl);
-    if (!imageFetch.ok) throw new Error("Failed to fetch generated image");
+    // Step 3: Upload to Cloudinary for a stable permanent URL
+    try {
+      const uploadResult = await cloudinary.uploader.upload(imageUrl, {
+        folder: "social-ops-ai-automation",
+        public_id: data.inputs ? data.inputs.substring(0, 50) : undefined,
+      });
 
-    const arrayBuffer = await imageFetch.arrayBuffer();
-    const base64Image = Buffer.from(arrayBuffer).toString("base64");
-
-    const uploadResponse = await fetch(
-      `https://api.imgbb.com/1/upload?key=${aiConfig.imgbbApiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          image: base64Image,
-          name: data.inputs ? data.inputs.substring(0, 50) : "generated_image",
-        }),
-      }
-    );
-
-    const uploadResult: any = await uploadResponse.json();
-
-    if (!uploadResponse.ok || !uploadResult.success) {
-      logger.warn("imgbb upload failed, using direct Horde URL");
+      return uploadResult.secure_url;
+    } catch (uploadError) {
+      logger.warn("Cloudinary upload failed, using direct Horde URL", {
+        error: (uploadError as Error).message,
+      });
       return imageUrl; // fallback to direct Horde URL
     }
-
-    return uploadResult.data.url;
   } catch (error) {
     logger.error("Error generating/uploading image with AI Horde:", {
       error: (error as Error).message,

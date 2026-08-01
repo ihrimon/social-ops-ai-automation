@@ -3,7 +3,7 @@ import { ConfigError } from "./errors.js";
 
 /**
  * Vars the app cannot meaningfully run without. Other integrations
- * (MongoDB, AI Horde/imgbb, FB_APP_SECRET) degrade gracefully at runtime
+ * (MongoDB, AI Horde/Cloudinary, FB_APP_SECRET) degrade gracefully at runtime
  * when absent, so they stay optional here rather than failing boot.
  */
 export const requiredEnvSchema = z.object({

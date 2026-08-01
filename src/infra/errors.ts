@@ -14,7 +14,7 @@ export class AppError extends Error {
 /** A required configuration value is missing or invalid at boot time. */
 export class ConfigError extends AppError {}
 
-/** A call to an external API (Facebook Graph, Gemini, AI Horde, imgbb) failed. */
+/** A call to an external API (Facebook Graph, Gemini, AI Horde, Cloudinary) failed. */
 export class ExternalServiceError extends AppError {
   constructor(
     public readonly service: string,

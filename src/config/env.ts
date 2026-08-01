@@ -11,10 +11,17 @@ assertRequiredEnv(process.env);
 export const aiConfig = {
   geminiApiKey: process.env.GEMINI_API_KEY,
   model: "gemini-3.6-flash",
-  embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || "gemini-embedding-001",
+  embeddingModel: process.env.GEMINI_EMBEDDING_MODEL,
   huggingfaceApiKey: process.env.HUGGINGFACE_API_KEY,
-  imgbbApiKey: process.env.IMGBB_API_KEY,
-  aiHordeApiKey: process.env.AI_HORDE_API_KEY || "gyU_LA6nswk_bt0cl83Ogg",
+  aiHordeApiKey: process.env.AI_HORDE_API_KEY,
+  hordeApiBase: process.env.HORDE_API_BASE,
+};
+
+/** Cloudinary — permanent hosting for AI-generated images. */
+export const cloudinaryConfig = {
+  cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+  apiKey: process.env.CLOUDINARY_API_KEY,
+  apiSecret: process.env.CLOUDINARY_API_SECRET_KEY,
 };
 
 /** Facebook Graph API / Messenger / webhook */
@@ -24,6 +31,7 @@ export const facebookConfig = {
   verifyToken: process.env.FB_VERIFY_TOKEN,
   appSecret: process.env.FB_APP_SECRET,
   graphApiVersion: process.env.FB_GRAPH_API_VERSION || "v23.0",
+  appId: process.env.FB_APP_ID,
 };
 
 /** HTTP server. */
@@ -31,10 +39,44 @@ export const serverConfig = {
   port: process.env.PORT || 3000,
 };
 
+/** App runtime mode / logging verbosity. */
+export const appConfig = {
+  nodeEnv: process.env.NODE_ENV || "development",
+  logLevel: process.env.LOG_LEVEL || "info",
+};
+
+/** Error tracking (Sentry). */
+export const monitoringConfig = {
+  sentryDsn: process.env.SENTRY_DSN,
+};
+
+/** Webhook endpoint rate limiting (express-rate-limit). */
+export const rateLimitConfig = {
+  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
+  maxRequests: Number(process.env.RATE_LIMIT_MAX_REQUESTS || 100),
+};
+
+/** Webhook request body size limit. */
+export const webhookConfig = {
+  maxBodyBytes: process.env.WEBHOOK_MAX_BODY_BYTES || "1mb",
+};
+
+/** Admin dashboard auth. */
+export const adminConfig = {
+  dashboardJwtSecret: process.env.ADMIN_DASHBOARD_JWT_SECRET,
+  dashboardPassword: process.env.ADMIN_DASHBOARD_PASSWORD,
+};
+
+/** CORS allowlist for the admin dashboard frontend. */
+export const corsConfig = {
+  origin: process.env.CORS_ORIGIN,
+};
+
 /** MongoDB connection, collection names, and vector search index names. */
 export const mongoConfig = {
   uri: process.env.MONGODB_URI,
   dbName: process.env.MONGODB_DB_NAME || "social-ops-ai-automation",
+  backupDir: process.env.MONGODB_BACKUP_DIR || "backups",
   conversationsCollection: process.env.MONGODB_CONVERSATIONS_COLLECTION || "conversation_messages",
   conversationVectorIndex:
     process.env.MONGODB_CONVERSATION_VECTOR_INDEX ||
@@ -67,8 +109,15 @@ export const messengerConfig = {
 /** Convenience bundle — prefer importing the topic-specific config */
 export const config = {
   ai: aiConfig,
+  cloudinary: cloudinaryConfig,
   facebook: facebookConfig,
   server: serverConfig,
   mongo: mongoConfig,
   messenger: messengerConfig,
+  app: appConfig,
+  monitoring: monitoringConfig,
+  rateLimit: rateLimitConfig,
+  webhook: webhookConfig,
+  admin: adminConfig,
+  cors: corsConfig,
 };
