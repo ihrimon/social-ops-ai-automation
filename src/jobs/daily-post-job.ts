@@ -1,8 +1,9 @@
 import cron from "node-cron";
 import { errorMessage } from "../infra/errors.js";
 import { logger } from "../infra/logger.js";
-import { createPublicPost } from "../integrations/facebook/poster.js";
+import { createPhotoPost, createPublicPost } from "../integrations/facebook/poster.js";
 import { generateArticle } from "../modules/content/article.service.js";
+import { generateImage } from "../modules/content/image.service.js";
 import {
   createPostLog,
   hasPostedOnDateKey,
@@ -36,7 +37,8 @@ async function getNextTopic() {
   return result;
 }
 
-async function runGenerator(): Promise<void> {
+/** Runs one daily-post cycle (topic → article → image → Facebook post). Exported so it can also be triggered manually/from tests, independent of the cron schedule. */
+export async function runDailyPostJob(): Promise<void> {
   let postLogId = null;
   const postDateKey = todayDateKey();
 
@@ -96,7 +98,18 @@ async function runGenerator(): Promise<void> {
 
     logger.info(`topic: ${topic}\narticle: ${article}`);
 
-    const facebookResponse = await createPublicPost(article);
+    // Best-effort visual: a failed/slow image generation must never block
+    // the text post, since that's the guaranteed daily deliverable.
+    const imageUrl = await generateImage({ inputs: topic });
+    await updatePostLog(postLogId, {
+      status: imageUrl ? "image_generated" : "image_generation_skipped",
+      imageUrl: imageUrl ?? undefined,
+    });
+
+    const facebookResponse = imageUrl
+      ? await createPhotoPost(imageUrl, article)
+      : await createPublicPost(article);
+
     await updatePostLog(postLogId, {
       status: "posted",
       facebookResponse,
@@ -112,16 +125,18 @@ async function runGenerator(): Promise<void> {
   }
 }
 
-/** Schedules the daily 1:30 PM Asia/Dhaka text-post generation cycle. */
+/** Schedules the daily Asia/Dhaka post generation cycle (cron pattern: `DAILY_POST_TIME`). */
 export function scheduleDailyPostJob(): void {
   cron.schedule(
     DAILY_POST_TIME,
     async () => {
-      logger.info("Daily 1:30 PM post job triggered.");
-      await runGenerator();
+      logger.info(`Daily post job triggered (cron: "${DAILY_POST_TIME}" ${TIMEZONE}).`);
+      await runDailyPostJob();
     },
     { timezone: TIMEZONE }
   );
 
-  logger.info("Background worker started. Text posts are scheduled daily at 1:30 PM Asia/Dhaka.");
+  logger.info(
+    `Background worker started. Posts are scheduled daily via cron "${DAILY_POST_TIME}" (${TIMEZONE}).`
+  );
 }

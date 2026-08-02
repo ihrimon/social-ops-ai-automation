@@ -12,6 +12,7 @@ interface FacebookComment {
   id: string;
   message?: string;
   from?: { id: string; name?: string };
+  is_hidden?: boolean;
 }
 
 let pollRunning = false;
@@ -42,7 +43,11 @@ async function pollRecentComments(): Promise<void> {
 
     for (const post of posts) {
       const commentsResponse = await graphGet<{ data: FacebookComment[] }>(`${post.id}/comments`, {
-        fields: "id,message,from",
+        fields: "id,message,from,is_hidden",
+        // `filter=stream` (vs the default `toplevel`) is required for the
+        // Graph API to include hidden/spam-flagged comments in the response
+        // at all — needed to confirm/refute the hidden-comment theory below.
+        filter: "stream",
         limit: commentsConfig.commentsPerPost,
       });
 
@@ -52,6 +57,20 @@ async function pollRecentComments(): Promise<void> {
         const commentText = comment.message?.trim();
         if (!commentText || !comment.from?.id) {
           continue;
+        }
+
+        if (comment.is_hidden) {
+          // Diagnostic for the "unknown-account comments get no reply"
+          // issue: Meta's spam/hidden-comment filter can auto-hide a
+          // first-time commenter's comment from public view, and such
+          // comments may not surface from the default `/comments` edge at
+          // all. Requesting `is_hidden` + `filter=stream` above should
+          // surface them; this log confirms whether that theory holds and
+          // still lets the comment flow through moderateComment() below so
+          // a reply is attempted even when hidden.
+          logger.warn(
+            `Hidden Facebook comment found via polling (commenter likely new/unrecognized): ${comment.id}`
+          );
         }
 
         await moderateComment({
