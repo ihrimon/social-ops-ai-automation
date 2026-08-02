@@ -13,3 +13,18 @@ export async function createPublicPost(article: string) {
     throw error;
   }
 }
+
+/** Posts a photo (hosted at `imageUrl`) with a caption to the Page's feed. */
+export async function createPhotoPost(imageUrl: string, caption: string) {
+  try {
+    const response = await graphPost(`${facebookConfig.pageId}/photos`, {
+      url: imageUrl,
+      caption,
+    });
+    logger.info("Facebook photo post response:", { data: response.data });
+    return response.data;
+  } catch (error) {
+    logger.error("Failed to post photo to Facebook.", { error: errorMessage(error) });
+    throw error;
+  }
+}
