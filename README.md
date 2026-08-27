@@ -243,6 +243,20 @@ npm start
 
 Use a process manager (PM2, Docker, systemd) to keep the process alive in production, e.g. `pm2 start dist/index.js --name social-ops-ai-automation`.
 
+### Docker
+
+A multi-stage `Dockerfile` (build → prune dev deps → minimal `node:20-alpine` runtime) and a `docker-compose.yml` (app + a local MongoDB, for convenience — no Atlas Vector Search, so RAG falls back to text-only search) are provided.
+
+```bash
+docker compose up -d --build
+```
+
+⚠️ **This loads your real `.env` into the container** (`env_file: .env`). The moment it starts, the daily-post cron, Messenger reply worker, and comment-polling worker all start running against your **actual** Facebook Page and Gemini account — there is no dry-run/staging mode yet. Only run this against a `.env` you're prepared to see take real, live action with (or point `FB_PAGE_ACCESS_TOKEN`/`GEMINI_API_KEY` at throwaway/test credentials first).
+
+```bash
+docker compose down   # stop and remove containers (mongo-data volume persists)
+```
+
 ---
 
 ## 🧪 Testing & Quality

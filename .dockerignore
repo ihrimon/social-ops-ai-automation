@@ -1,0 +1,14 @@
+node_modules
+dist
+backups
+tests
+.git
+.github
+.husky
+.vscode
+*.md
+!README.md
+.env
+.env.local
+.env.production
+npm-debug.log
