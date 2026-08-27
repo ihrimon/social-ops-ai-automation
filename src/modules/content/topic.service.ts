@@ -46,7 +46,7 @@ export async function addTopics(
 
 export async function getNextTopicFromDb(
   model: Model<TopicDoc> = Topic
-): Promise<{ topic: string; remaining: number } | null> {
+): Promise<{ id: string; topic: string; remaining: number } | null> {
   // Atomically find and mark the oldest unused topic
   const nextDoc = await model.findOneAndUpdate(
     { used: false },
@@ -62,9 +62,22 @@ export async function getNextTopicFromDb(
   const remaining = await model.countDocuments({ used: false });
 
   return {
+    id: String(nextDoc._id),
     topic: nextDoc.topic,
     remaining,
   };
+}
+
+/**
+ * Reverts a topic back to unused. Callers must invoke this when a topic was
+ * claimed via getNextTopicFromDb() but the run failed before the Facebook
+ * post actually succeeded, so the topic isn't lost from the queue.
+ */
+export async function revertTopicToUnused(
+  id: string,
+  model: Model<TopicDoc> = Topic
+): Promise<void> {
+  await model.updateOne({ _id: id, used: true }, { $set: { used: false, usedAt: null } });
 }
 
 export async function getUnusedTopicCount(model: Model<TopicDoc> = Topic): Promise<number> {

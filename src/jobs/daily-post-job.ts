@@ -13,6 +13,7 @@ import {
   addTopics,
   generateMonthlyTopics,
   getNextTopicFromDb,
+  revertTopicToUnused,
 } from "../modules/content/topic.service.js";
 
 const TIMEZONE = "Asia/Dhaka";
@@ -40,6 +41,7 @@ async function getNextTopic() {
 /** Runs one daily-post cycle (topic → article → image → Facebook post). Exported so it can also be triggered manually/from tests, independent of the cron schedule. */
 export async function runDailyPostJob(): Promise<void> {
   let postLogId = null;
+  let claimedTopicId: string | null = null;
   const postDateKey = todayDateKey();
 
   try {
@@ -69,7 +71,8 @@ export async function runDailyPostJob(): Promise<void> {
       time: new Date().toLocaleString("en-US", { timeZone: TIMEZONE }),
     });
 
-    const { topic, remaining } = await getNextTopic();
+    const { id: topicId, topic, remaining } = await getNextTopic();
+    claimedTopicId = topicId;
 
     logger.info(`Selected topic for today: ${topic}`);
     logger.info(`Remaining topics in queue for future days: ${remaining}`);
@@ -83,6 +86,7 @@ export async function runDailyPostJob(): Promise<void> {
 
     if (!article) {
       logger.warn("Article missing. Skipping Facebook post.");
+      await revertTopicToUnused(claimedTopicId);
       await updatePostLog(postLogId, {
         status: "skipped",
         reason: "Article missing",
@@ -110,6 +114,9 @@ export async function runDailyPostJob(): Promise<void> {
       ? await createPhotoPost(imageUrl, article)
       : await createPublicPost(article);
 
+    // Post succeeded — the topic is genuinely consumed now, nothing to revert.
+    claimedTopicId = null;
+
     await updatePostLog(postLogId, {
       status: "posted",
       facebookResponse,
@@ -117,6 +124,9 @@ export async function runDailyPostJob(): Promise<void> {
     });
   } catch (error) {
     logger.error("Problem in main function:", { error: errorMessage(error) });
+    if (claimedTopicId) {
+      await revertTopicToUnused(claimedTopicId);
+    }
     await updatePostLog(postLogId, {
       status: "failed",
       error: errorMessage(error),
