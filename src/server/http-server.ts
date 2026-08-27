@@ -2,6 +2,7 @@ import express, { type Application, type NextFunction, type Request, type Respon
 import type { Server } from "http";
 import { serverConfig } from "../config/env.js";
 import { logger } from "../infra/logger.js";
+import { captureException } from "../infra/sentry.js";
 import {
   AppError,
   ConfigError,
@@ -38,6 +39,7 @@ function errorHandler(error: unknown, req: Request, res: Response, next: NextFun
   }
 
   logger.error(`Unhandled error on ${req.method} ${req.path}:`, { error: errorMessage(error) });
+  captureException(error, { method: req.method, path: req.path });
   res.status(statusForError(error)).json({ error: "Internal Server Error" });
 }
 

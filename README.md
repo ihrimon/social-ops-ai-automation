@@ -282,6 +282,8 @@ Current suite (`tests/unit`, `tests/integration`) covers prompt builders, the co
 
 - **Webhook signature verification**: `crypto.timingSafeEqual` HMAC-SHA256 check rejects tampered requests before any processing.
 - **Retry policy**: `infra/retry.ts` backs off exponentially on Gemini `429`s and Graph API `5xx`/network errors.
+- **Structured logging**: `infra/logger.ts` is backed by [pino](https://getpino.io/) — pretty-printed locally, raw NDJSON in production (`NODE_ENV=production`) for log aggregators. Level follows `LOG_LEVEL` (or forced to `debug` if `DEBUG` is set).
+- **Error tracking**: set `SENTRY_DSN` to enable [Sentry](https://sentry.io/) (`infra/sentry.ts`) — captures uncaught exceptions/unhandled rejections (`index.ts`) and any error that reaches the Express error middleware (`server/http-server.ts`). Left unset, it silently no-ops — no code changes needed either way.
 - **Data retention**: TTL indexes purge the embedding cache and post logs automatically (see index definitions in each model under `src/modules/*/`).
 - **Graceful shutdown**: drains the HTTP server and closes the MongoDB connection on `SIGTERM`/`SIGINT`, with a forced-exit timeout as a safety net.
 - **Degrades without Mongo**: if `MONGODB_URI` is unset, the knowledge store falls back to reading `knowledge-base.json` directly instead of crashing.

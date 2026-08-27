@@ -1,5 +1,6 @@
 import { logger } from "./infra/logger.js";
 import { errorMessage } from "./infra/errors.js";
+import { initSentry, captureException } from "./infra/sentry.js";
 import { initDatabase } from "./integrations/mongo/db-init.js";
 import { closeMongoClient } from "./integrations/mongo/client.js";
 import { scheduleDailyPostJob } from "./jobs/daily-post-job.js";
@@ -30,6 +31,8 @@ async function shutdown(
 }
 
 async function bootstrap(): Promise<void> {
+  initSentry();
+
   scheduleDailyPostJob();
 
   // Initialize Database connection, warm up indexes, and populate local knowledge cache
@@ -50,10 +53,12 @@ async function bootstrap(): Promise<void> {
 
   process.on("unhandledRejection", (reason) => {
     logger.error("Unhandled promise rejection:", { reason });
+    captureException(reason);
   });
 
   process.on("uncaughtException", (error) => {
     logger.error("Uncaught exception:", { error: error.message, stack: error.stack });
+    captureException(error);
     void shutdown("uncaughtException", webhookServer);
   });
 }

@@ -5,10 +5,16 @@ import type { IncomingMessage } from "http";
 // Mocked so signature verification is deterministic regardless of the real
 // .env's FB_APP_SECRET/FB_VERIFY_TOKEN — verifyFacebookSignature() reads
 // facebookConfig directly rather than taking the secret as a parameter.
+// appConfig is also provided since infra/logger.js (imported transitively via
+// webhook-verifier.js) reads it for the pino log level/transport setup.
 vi.mock("../../src/config/env.js", () => ({
   facebookConfig: {
     appSecret: "test-app-secret",
     verifyToken: "test-verify-token",
+  },
+  appConfig: {
+    nodeEnv: "test",
+    logLevel: "silent",
   },
 }));
 

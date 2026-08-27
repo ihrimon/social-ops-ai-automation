@@ -1,27 +1,30 @@
+import pino from "pino";
+import { appConfig } from "../config/env.js";
+
 type LogFields = Record<string, unknown>;
 
-function timestamp(): string {
-  return new Date().toISOString();
-}
+const level = process.env.DEBUG ? "debug" : appConfig.logLevel;
 
-function format(level: string, message: string, fields?: LogFields): string {
-  const suffix = fields && Object.keys(fields).length ? ` ${JSON.stringify(fields)}` : "";
-  return `[${timestamp()}] ${level.toUpperCase()} ${message}${suffix}`;
-}
+const pinoLogger = pino({
+  level,
+  // Human-readable output locally; raw NDJSON in production for log aggregators.
+  transport:
+    appConfig.nodeEnv === "production"
+      ? undefined
+      : { target: "pino-pretty", options: { colorize: true, translateTime: "SYS:standard" } },
+});
 
 export const logger = {
   info(message: string, fields?: LogFields): void {
-    console.log(format("info", message, fields));
+    pinoLogger.info(fields ?? {}, message);
   },
   warn(message: string, fields?: LogFields): void {
-    console.warn(format("warn", message, fields));
+    pinoLogger.warn(fields ?? {}, message);
   },
   error(message: string, fields?: LogFields): void {
-    console.error(format("error", message, fields));
+    pinoLogger.error(fields ?? {}, message);
   },
   debug(message: string, fields?: LogFields): void {
-    if (process.env.DEBUG) {
-      console.debug(format("debug", message, fields));
-    }
+    pinoLogger.debug(fields ?? {}, message);
   },
 };
