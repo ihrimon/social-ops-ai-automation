@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-test-build:
+    runs-on: ubuntu-latest
+    env:
+      # Dummy values so config/env.ts's boot-time validation (assertRequiredEnv)
+      # passes in CI — no real secrets are needed to lint/typecheck/test/build.
+      GEMINI_API_KEY: ci-placeholder-gemini-key
+      FB_PAGE_ACCESS_TOKEN: ci-placeholder-page-token
+      FB_PAGE_ID: ci-placeholder-page-id
+      FB_VERIFY_TOKEN: ci-placeholder-verify-token
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Typecheck (src)
+        run: npm run typecheck
+
+      - name: Typecheck (tests)
+        run: npm run typecheck:tests
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
