@@ -13,6 +13,7 @@ AI-driven Facebook Page automation: scheduled article posts, Messenger reply gen
 - [⚙️ Environment Variables](#️-environment-variables)
 - [🔑 Facebook App & Webhook Setup](#-facebook-app--webhook-setup)
 - [🧠 Customizing the Knowledge Base](#-customizing-the-knowledge-base)
+- [🛠️ Admin Dashboard](#️-admin-dashboard)
 - [🚀 Running the Project](#-running-the-project)
 - [🧪 Testing & Quality](#-testing--quality)
 - [🛡️ Reliability & Security Notes](#️-reliability--security-notes)
@@ -28,6 +29,7 @@ AI-driven Facebook Page automation: scheduled article posts, Messenger reply gen
 - Runs daily via `node-cron` (`jobs/daily-post-job.ts`, Asia/Dhaka timezone).
 - **Idempotent**: a `post_logs` date-key guard prevents double-posting on retries/restarts.
 - **Crash-safe topic claim**: if article generation or posting fails after a topic is claimed, the topic is reverted to unused so it isn't lost from the queue.
+- **Optional approval gate**: set `REQUIRE_POST_APPROVAL=true` to hold the generated draft for admin approval (via the [Admin Dashboard](#️-admin-dashboard)) instead of auto-publishing. Off by default — the fully-automatic flow above is unchanged.
 
 ### 💬 2. Messenger Auto-Responder
 
@@ -49,7 +51,12 @@ AI-driven Facebook Page automation: scheduled article posts, Messenger reply gen
 - `knowledge-base.json` is chunked and synced into MongoDB on startup (`modules/knowledge/knowledge.store.ts`), with each chunk embedded via Gemini and cached (`embedding_cache` collection, content-hash based to skip unchanged re-embeds).
 - Retrieval uses **hybrid search** — MongoDB `$vectorSearch` + `$text` — merged with Reciprocal Rank Fusion (RRF), with graceful fallback to a local in-memory/JSON cache if Mongo or vector search is unavailable.
 
-### 🛡️ 5. Resilience & Security
+### 🛠️ 5. Admin Dashboard
+
+- A separate React SPA (`admin-dashboard/`) for post approval, browsing Messenger conversations (with manual AI pause/resume), and editing the knowledge base — see [Admin Dashboard](#️-admin-dashboard) below.
+- Backed by a JWT-gated `/admin/*` API (`server/admin-controller.ts`) — a single shared admin password, rate-limited login, CORS scoped to just this router.
+
+### 🛡️ 6. Resilience & Security
 
 - HMAC (`x-hub-signature-256`) verification on every webhook request (`integrations/facebook/webhook-verifier.ts`).
 - Zod-validated webhook payloads (`server/webhook.schema.ts`).
@@ -67,12 +74,12 @@ AI-driven Facebook Page automation: scheduled article posts, Messenger reply gen
 flowchart TD
     FB["Facebook Graph API & Webhooks"]
     HMAC["HMAC signature verification"]
-    SRV["Express HTTP server (src/index.ts)"]
+    SRV["Express HTTP server (apps/backend/src/index.ts)"]
     CRON["Daily cron job (Asia/Dhaka)"]
     POST["Post generator (daily-post-job.ts)"]
     MSG["Messenger queue (queue.worker.ts)"]
     CMT["Comment moderation (comment.service.ts)"]
-    GEMINI["Google Gemini AI (src/ai/client.ts + prompts)"]
+    GEMINI["Google Gemini AI (apps/backend/src/ai/client.ts + prompts)"]
     MONGO[("MongoDB: RAG knowledge base, conversation memory,\npending replies, dedupe stores, post logs")]
 
     FB -- webhook events --> HMAC
@@ -89,7 +96,7 @@ flowchart TD
     CMT -.-> FB
 ```
 
-Background workers (`src/jobs/`) run alongside the HTTP server in the same process:
+Background workers (`apps/backend/src/jobs/`) run alongside the HTTP server in the same process:
 
 - `daily-post-job.ts` — cron-scheduled post generation.
 - `pending-reply-worker.ts` — polls and delivers debounced Messenger replies.
@@ -99,35 +106,43 @@ Background workers (`src/jobs/`) run alongside the HTTP server in the same proce
 
 ## 📂 Project Structure
 
+This is an **npm workspaces monorepo** — `npm install` at the repo root installs both apps' dependencies into one lockfile. Every `src/`/`tests/`/config path mentioned elsewhere in this document is relative to `apps/backend/` unless stated otherwise.
+
 ```
-src/
-├── ai/
-│   ├── client.ts                 # Shared Gemini client (generateContent, embeddings)
-│   └── prompts/                  # Prompt builders (article, topics, reply, classify)
-├── config/
-│   └── env.ts                    # Centralized, typed env config (fail-fast validation)
-├── infra/
-│   ├── errors.ts                 # AppError hierarchy + errorMessage()
-│   ├── logger.ts                 # Structured logger
-│   ├── retry.ts                  # Exponential backoff helper
-│   └── validation.ts             # Required-env assertion at boot
-├── integrations/
-│   ├── facebook/                 # graph-client, poster, messenger send API, webhook verifier
-│   └── mongo/                    # connection client + db-init (indexes, TTLs, KB sync)
-├── modules/
-│   ├── content/                  # article/image generation, topic queue, post logs
-│   ├── comments/                 # comment moderation service + dedupe store
-│   ├── messenger/                # reply service, debounce/claim queue worker, conversation memory
-│   └── knowledge/                # RAG knowledge store, embeddings, embedding cache
-├── jobs/                         # daily-post-job, pending-reply-worker, comment-poll-worker
-├── server/                       # Express app, webhook controller, health controller, schemas
-└── index.ts                      # Entry point: bootstraps DB, jobs, workers, HTTP server
+apps/
+├── backend/                       # Express/TypeScript backend — its own package.json
+│   ├── src/
+│   │   ├── ai/
+│   │   │   ├── client.ts               # Shared Gemini client (generateContent, embeddings)
+│   │   │   └── prompts/                # Prompt builders (article, topics, reply, classify)
+│   │   ├── config/
+│   │   │   └── env.ts                  # Centralized, typed env config (fail-fast validation)
+│   │   ├── infra/
+│   │   │   ├── errors.ts               # AppError hierarchy + errorMessage()
+│   │   │   ├── logger.ts               # Structured logger
+│   │   │   ├── retry.ts                # Exponential backoff helper
+│   │   │   └── validation.ts           # Required-env assertion at boot
+│   │   ├── integrations/
+│   │   │   ├── facebook/               # graph-client, poster, messenger send API, webhook verifier
+│   │   │   └── mongo/                  # connection client + db-init (indexes, TTLs, KB sync)
+│   │   ├── modules/
+│   │   │   ├── content/                # article/image generation, topic queue, post logs
+│   │   │   ├── comments/                # comment moderation service + dedupe store
+│   │   │   ├── messenger/               # reply service, debounce/claim queue worker, conversation memory
+│   │   │   ├── knowledge/               # RAG knowledge store, embeddings, embedding cache
+│   │   │   └── admin/                   # admin auth (JWT sign/verify, password check)
+│   │   ├── jobs/                        # daily-post-job, pending-reply-worker, comment-poll-worker
+│   │   ├── server/                      # Express app, webhook/health/admin controllers, schemas
+│   │   └── index.ts                     # Entry point: bootstraps DB, jobs, workers, HTTP server
+│   ├── tests/
+│   │   ├── unit/                  # prompts, dedupe store, webhook verifier, admin auth
+│   │   └── integration/           # webhook schema validation
+│   ├── knowledge-base.json         # Business knowledge base (source for the RAG store)
+│   └── Dockerfile
+└── admin-dashboard/                # Separate Vite + React + TS admin SPA — its own package.json
 
-tests/
-├── unit/                         # prompts, dedupe store, webhook verifier
-└── integration/                  # webhook schema validation
-
-knowledge-base.json                # Business knowledge base (source for the RAG store)
+package.json                        # Workspace root: "workspaces": ["apps/*"], shared husky/lint-staged/prettier
+docker-compose.yml                  # Builds apps/backend/Dockerfile with the repo root as build context
 ```
 
 ---
@@ -143,7 +158,7 @@ knowledge-base.json                # Business knowledge base (source for the RAG
 
 ## ⚙️ Environment Variables
 
-All config is centralized and typed in [src/config/env.ts](src/config/env.ts). Required variables are validated at boot ([src/infra/validation.ts](src/infra/validation.ts)) — the process fails fast with a clear error instead of breaking later mid-request.
+All config is centralized and typed in [apps/backend/src/config/env.ts](apps/backend/src/config/env.ts). Required variables are validated at boot ([apps/backend/src/infra/validation.ts](apps/backend/src/infra/validation.ts)) — the process fails fast with a clear error instead of breaking later mid-request.
 
 ```env
 # Gemini / AI
@@ -202,7 +217,8 @@ COMMENT_POLL_COMMENTS_LIMIT=25
 # Admin dashboard / CORS / monitoring (optional)
 ADMIN_DASHBOARD_JWT_SECRET=
 ADMIN_DASHBOARD_PASSWORD=
-CORS_ORIGIN=
+CORS_ORIGIN=http://localhost:5173
+REQUIRE_POST_APPROVAL=false
 SENTRY_DSN=
 ```
 
@@ -222,16 +238,54 @@ SENTRY_DSN=
 
 ## 🧠 Customizing the Knowledge Base
 
-Edit `knowledge-base.json` at the project root with your business details (name, services, selling points, pricing policy, lead questions, reply style, fallback reply). On startup, `initDatabase()` (`src/integrations/mongo/db-init.ts`) chunks and syncs it into MongoDB automatically — only chunks whose content actually changed are re-embedded.
+Edit `apps/backend/knowledge-base.json` with your business details (name, services, selling points, pricing policy, lead questions, reply style, fallback reply). On startup, `initDatabase()` (`src/integrations/mongo/db-init.ts`) chunks and syncs it into MongoDB automatically — only chunks whose content actually changed are re-embedded.
 
 For MongoDB Atlas Vector Search, create indexes named `knowledge_embedding_index` (on `knowledge_chunks`, field `embedding`) and `conversation_embedding_index` (on `conversation_messages`) with the dimensions matching your `GEMINI_EMBEDDING_MODEL` output and cosine similarity.
+
+---
+
+## 🛠️ Admin Dashboard
+
+A private web UI (`apps/admin-dashboard/`, a separate Vite + React + TypeScript project) for:
+
+- **Post approval** — when `REQUIRE_POST_APPROVAL=true`, review/approve/reject the daily draft before it's published.
+- **Conversation log** — browse Messenger conversations, and manually pause/resume the AI for a given user (the human-handoff mechanism the app already uses internally, exposed as a button).
+- **Knowledge base editor** — view/edit `knowledge-base.json` and trigger an immediate re-sync, without shell/file access to the server.
+
+### Backend setup
+
+Set these in the backend's `apps/backend/.env` (all already listed above):
+
+```env
+ADMIN_DASHBOARD_PASSWORD=choose-a-strong-shared-password
+ADMIN_DASHBOARD_JWT_SECRET=a-long-random-string
+CORS_ORIGIN=http://localhost:5173   # the dashboard's dev/deploy origin
+REQUIRE_POST_APPROVAL=false         # set true to gate daily posts behind approval
+```
+
+Without `ADMIN_DASHBOARD_PASSWORD`/`ADMIN_DASHBOARD_JWT_SECRET` set, `/admin/login` responds `503` rather than crashing the app — the rest of the automation is unaffected either way.
+
+### Running the dashboard
+
+```bash
+# from the repo root, once (installs deps for both apps into one lockfile):
+npm install
+
+cd apps/admin-dashboard
+cp .env.example .env   # set VITE_API_BASE_URL if the backend isn't on localhost:3000
+
+npm run dev             # http://localhost:5173, talks to the backend over CORS
+npm run build            # production build (dist/) — deploy as a static site, separately from the backend
+```
+
+The dashboard is a fully separate deploy target — it only needs network access to the backend's `/admin` API (CORS-gated) and never touches Mongo/Facebook/Gemini directly.
 
 ---
 
 ## 🚀 Running the Project
 
 ```bash
-npm install
+npm install   # installs deps for both apps/backend and apps/admin-dashboard (one lockfile)
 
 # Development (auto-reload)
 npm run dev
@@ -245,13 +299,13 @@ Use a process manager (PM2, Docker, systemd) to keep the process alive in produc
 
 ### Docker
 
-A multi-stage `Dockerfile` (build → prune dev deps → minimal `node:20-alpine` runtime) and a `docker-compose.yml` (app + a local MongoDB, for convenience — no Atlas Vector Search, so RAG falls back to text-only search) are provided.
+A multi-stage `Dockerfile` (build → prune dev deps → minimal `node:20-alpine` runtime) and a `docker-compose.yml` (app + a local MongoDB, for convenience — no Atlas Vector Search, so RAG falls back to text-only search) are provided. `knowledge-base.json` is bind-mounted into the container so an edit made via the [Admin Dashboard](#️-admin-dashboard) persists across restarts (the image otherwise only `COPY`s it at build time).
 
 ```bash
 docker compose up -d --build
 ```
 
-⚠️ **This loads your real `.env` into the container** (`env_file: .env`). The moment it starts, the daily-post cron, Messenger reply worker, and comment-polling worker all start running against your **actual** Facebook Page and Gemini account — there is no dry-run/staging mode yet. Only run this against a `.env` you're prepared to see take real, live action with (or point `FB_PAGE_ACCESS_TOKEN`/`GEMINI_API_KEY` at throwaway/test credentials first).
+⚠️ **This loads your real `.env` into the container** (`env_file: apps/backend/.env`). The moment it starts, the daily-post cron, Messenger reply worker, and comment-polling worker all start running against your **actual** Facebook Page and Gemini account — there is no dry-run/staging mode yet. Only run this against a `.env` you're prepared to see take real, live action with (or point `FB_PAGE_ACCESS_TOKEN`/`GEMINI_API_KEY` at throwaway/test credentials first).
 
 ```bash
 docker compose down   # stop and remove containers (mongo-data volume persists)
@@ -274,7 +328,9 @@ npm run format:check  # Prettier check
 
 Pre-commit hooks (Husky + lint-staged) run ESLint/Prettier on staged files automatically.
 
-Current suite (`tests/unit`, `tests/integration`) covers prompt builders, the comment dedupe store, the Facebook webhook signature verifier, and webhook payload schema validation.
+Current suite (`apps/backend/tests/unit`, `apps/backend/tests/integration`) covers prompt builders, the comment dedupe store, the Facebook webhook signature verifier, admin auth, and webhook payload schema validation.
+
+Run `npm run build:dashboard` (or `npm run typecheck --workspace=apps/admin-dashboard`) to check the admin dashboard separately.
 
 ---
 
@@ -284,6 +340,7 @@ Current suite (`tests/unit`, `tests/integration`) covers prompt builders, the co
 - **Retry policy**: `infra/retry.ts` backs off exponentially on Gemini `429`s and Graph API `5xx`/network errors.
 - **Structured logging**: `infra/logger.ts` is backed by [pino](https://getpino.io/) — pretty-printed locally, raw NDJSON in production (`NODE_ENV=production`) for log aggregators. Level follows `LOG_LEVEL` (or forced to `debug` if `DEBUG` is set).
 - **Error tracking**: set `SENTRY_DSN` to enable [Sentry](https://sentry.io/) (`infra/sentry.ts`) — captures uncaught exceptions/unhandled rejections (`index.ts`) and any error that reaches the Express error middleware (`server/http-server.ts`). Left unset, it silently no-ops — no code changes needed either way.
+- **Admin dashboard auth**: `/admin/login` is rate-limited (`express-rate-limit`) against brute-forcing the shared password; the password itself is compared with `crypto.timingSafeEqual` (`modules/admin/auth.ts`), and every other `/admin/*` route requires a signed JWT. CORS on `/admin` is scoped to `CORS_ORIGIN` only — unset, no cross-origin browser access is granted.
 - **Data retention**: TTL indexes purge the embedding cache and post logs automatically (see index definitions in each model under `src/modules/*/`).
 - **Graceful shutdown**: drains the HTTP server and closes the MongoDB connection on `SIGTERM`/`SIGINT`, with a forced-exit timeout as a safety net.
 - **Degrades without Mongo**: if `MONGODB_URI` is unset, the knowledge store falls back to reading `knowledge-base.json` directly instead of crashing.

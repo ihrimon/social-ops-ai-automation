@@ -1,6 +1,7 @@
+import cors from "cors";
 import express, { type Application, type NextFunction, type Request, type Response } from "express";
 import type { Server } from "http";
-import { serverConfig } from "../config/env.js";
+import { corsConfig, serverConfig } from "../config/env.js";
 import { logger } from "../infra/logger.js";
 import { captureException } from "../infra/sentry.js";
 import {
@@ -12,8 +13,10 @@ import {
 } from "../infra/errors.js";
 import { webhookRouter } from "./webhook-controller.js";
 import { healthRouter } from "./health-controller.js";
+import { adminRouter } from "./admin-controller.js";
 
 const WEBHOOK_PATH = "/webhook";
+const ADMIN_PATH = "/admin";
 
 /** Maps a known AppError subtype (or a body-parser style `.status`) to the HTTP status it should surface as. */
 function statusForError(error: unknown): number {
@@ -56,12 +59,17 @@ function createApp(): Application {
       webhook: WEBHOOK_PATH,
       health: "/health",
       ready: "/ready",
+      admin: ADMIN_PATH,
       dailyPost: "1:30 PM Asia/Dhaka",
     });
   });
 
   app.use(healthRouter);
   app.use(WEBHOOK_PATH, webhookRouter);
+  // CORS is scoped to /admin only — webhook/health stay server-to-server, no
+  // browser origin needs access to them. Without CORS_ORIGIN configured, no
+  // cross-origin access is granted (safer default for a JWT-issuing surface).
+  app.use(ADMIN_PATH, cors({ origin: corsConfig.origin, credentials: true }), adminRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

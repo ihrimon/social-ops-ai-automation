@@ -1,11 +1,15 @@
 import cron from "node-cron";
+import { adminConfig } from "../config/env.js";
 import { errorMessage } from "../infra/errors.js";
 import { logger } from "../infra/logger.js";
 import { createPhotoPost, createPublicPost } from "../integrations/facebook/poster.js";
 import { generateArticle } from "../modules/content/article.service.js";
 import { generateImage } from "../modules/content/image.service.js";
 import {
+  claimPendingPostForPublishing,
   createPostLog,
+  getPostLogById,
+  hasPendingApprovalForDateKey,
   hasPostedOnDateKey,
   updatePostLog,
 } from "../modules/content/post-log.store.js";
@@ -52,6 +56,21 @@ export async function runDailyPostJob(): Promise<void> {
       await createPostLog({
         status: "skipped",
         reason: `Already posted for ${postDateKey}`,
+        postDateKey,
+        startedAt: new Date(),
+        finishedAt: new Date(),
+        timezone: TIMEZONE,
+      });
+      return;
+    }
+
+    if (await hasPendingApprovalForDateKey(postDateKey)) {
+      logger.warn(
+        `A draft for ${postDateKey} is already awaiting admin approval. Skipping this run.`
+      );
+      await createPostLog({
+        status: "skipped",
+        reason: `Draft already pending approval for ${postDateKey}`,
         postDateKey,
         startedAt: new Date(),
         finishedAt: new Date(),
@@ -110,6 +129,19 @@ export async function runDailyPostJob(): Promise<void> {
       imageUrl: imageUrl ?? undefined,
     });
 
+    if (adminConfig.requirePostApproval) {
+      // The topic is intentionally left claimed (not reverted) — it's now
+      // embedded in this draft, to be finalized or reverted by an admin
+      // decision (publishPendingPost/rejectPendingPost), not lost.
+      logger.info(`Draft ready and awaiting admin approval for ${postDateKey}.`);
+      await updatePostLog(postLogId, {
+        status: "pending_approval",
+        topicId: claimedTopicId,
+        finishedAt: new Date(),
+      });
+      return;
+    }
+
     const facebookResponse = imageUrl
       ? await createPhotoPost(imageUrl, article)
       : await createPublicPost(article);
@@ -133,6 +165,58 @@ export async function runDailyPostJob(): Promise<void> {
       finishedAt: new Date(),
     });
   }
+}
+
+/**
+ * Publishes a draft that's awaiting admin approval. Used by the admin
+ * "approve" action. Atomically claims the draft first so a double-click (or a
+ * retry racing an in-flight publish) can't post twice; on failure the draft
+ * reverts to pending_approval (with `approveError` set) instead of being
+ * lost, so the admin can retry.
+ */
+export async function publishPendingPost(
+  postLogId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const claimed = await claimPendingPostForPublishing(postLogId);
+  if (!claimed) {
+    return { ok: false, error: "Draft is not awaiting approval (already published/rejected)." };
+  }
+
+  try {
+    const facebookResponse = claimed.imageUrl
+      ? await createPhotoPost(claimed.imageUrl, claimed.article as string)
+      : await createPublicPost(claimed.article as string);
+
+    await updatePostLog(postLogId, {
+      status: "posted",
+      facebookResponse,
+      finishedAt: new Date(),
+    });
+    return { ok: true };
+  } catch (error) {
+    logger.error(`Failed to publish approved draft ${postLogId}:`, { error: errorMessage(error) });
+    await updatePostLog(postLogId, {
+      status: "pending_approval",
+      approveError: errorMessage(error),
+    });
+    return { ok: false, error: errorMessage(error) };
+  }
+}
+
+/** Rejects a draft awaiting admin approval and returns its topic to the unused queue. */
+export async function rejectPendingPost(
+  postLogId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const draft = await getPostLogById(postLogId);
+  if (!draft || draft.status !== "pending_approval") {
+    return { ok: false, error: "Draft is not awaiting approval (already published/rejected)." };
+  }
+
+  await updatePostLog(postLogId, { status: "rejected", finishedAt: new Date() });
+  if (draft.topicId) {
+    await revertTopicToUnused(draft.topicId as string);
+  }
+  return { ok: true };
 }
 
 /** Schedules the daily Asia/Dhaka post generation cycle (cron pattern: `DAILY_POST_TIME`). */

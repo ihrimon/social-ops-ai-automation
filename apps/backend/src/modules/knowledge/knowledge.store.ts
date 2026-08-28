@@ -101,6 +101,22 @@ async function loadKnowledgeBase(): Promise<any> {
   return JSON.parse(data);
 }
 
+/** Raw knowledge-base.json content, for the admin dashboard's editor. */
+export async function getKnowledgeBaseRaw(): Promise<string> {
+  return fs.readFile(KNOWLEDGE_BASE_FILE, "utf-8");
+}
+
+/**
+ * Writes new knowledge-base.json content (validated as JSON first, so a typo
+ * never corrupts the file) and immediately re-syncs it into Mongo so the RAG
+ * store reflects the edit without waiting for a restart.
+ */
+export async function updateKnowledgeBaseRaw(content: string): Promise<void> {
+  JSON.parse(content); // throws with a clear message on invalid JSON — validate before writing
+  await fs.writeFile(KNOWLEDGE_BASE_FILE, content, "utf-8");
+  await syncKnowledgeBase();
+}
+
 export async function syncKnowledgeBase(
   model: Model<KnowledgeChunkDoc> = KnowledgeChunk
 ): Promise<void> {

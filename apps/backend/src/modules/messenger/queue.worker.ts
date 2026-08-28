@@ -171,6 +171,27 @@ export async function claimNextDueReply(
   return (job as unknown as PendingReplyJob) || null;
 }
 
+/** Clears an admin pause early (dashboard "resume AI" action) rather than waiting out `pausedUntil`. */
+export async function resumeUserReplies(
+  userId: string,
+  model: Model<PendingReplyDoc> = PendingReply
+): Promise<void> {
+  await model.updateOne(
+    { userId },
+    { $unset: { pausedUntil: "" }, $set: { updatedAt: new Date() } }
+  );
+}
+
+/** Whether a user's AI replies are currently paused (admin handoff), for the dashboard's conversation list. */
+export async function getPauseStatus(
+  userId: string,
+  model: Model<PendingReplyDoc> = PendingReply
+): Promise<{ paused: boolean; pausedUntil: Date | null }> {
+  const state = await model.findOne({ userId }).select({ pausedUntil: 1 }).lean();
+  const pausedUntil = state?.pausedUntil ?? null;
+  return { paused: Boolean(pausedUntil && pausedUntil > new Date()), pausedUntil };
+}
+
 export async function wasPausedAfterClaim(
   userId: string,
   claimedAt: Date,

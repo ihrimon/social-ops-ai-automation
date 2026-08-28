@@ -145,6 +145,57 @@ export async function addConversationMessage(
   await trimOldMessages(model, userId);
 }
 
+/**
+ * Lists distinct conversations (one row per userId) for the admin dashboard,
+ * newest last-message first. No equivalent query existed before this.
+ */
+export async function listConversations(
+  { limit = 20, before }: { limit?: number; before?: Date } = {},
+  model: Model<ConversationMessageDoc> = ConversationMessage
+) {
+  return model.aggregate([
+    ...(before ? [{ $match: { createdAt: { $lt: before } } }] : []),
+    { $sort: { createdAt: -1 } },
+    {
+      $group: {
+        _id: "$userId",
+        lastMessageText: { $first: "$text" },
+        lastMessageRole: { $first: "$role" },
+        lastMessageAt: { $first: "$createdAt" },
+        messageCount: { $sum: 1 },
+      },
+    },
+    { $sort: { lastMessageAt: -1 } },
+    { $limit: limit },
+    {
+      $project: {
+        _id: 0,
+        userId: "$_id",
+        lastMessageText: 1,
+        lastMessageRole: 1,
+        lastMessageAt: 1,
+        messageCount: 1,
+      },
+    },
+  ]);
+}
+
+/** Full (oldest-first) message history for one user, for the conversation detail view. */
+export async function getConversationHistory(
+  userId: string,
+  { limit = 100 }: { limit?: number } = {},
+  model: Model<ConversationMessageDoc> = ConversationMessage
+) {
+  const messages = await model
+    .find({ userId })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .select({ _id: 0, role: 1, text: 1, createdAt: 1, isHumanAdmin: 1 })
+    .lean();
+
+  return messages.reverse();
+}
+
 export async function getLastHumanInteractionTime(
   userId: string,
   model: Model<ConversationMessageDoc> = ConversationMessage

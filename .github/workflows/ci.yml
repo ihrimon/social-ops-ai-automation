@@ -44,5 +44,8 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Build
+      - name: Build (backend)
         run: npm run build
+
+      - name: Build (admin dashboard)
+        run: npm run build:dashboard

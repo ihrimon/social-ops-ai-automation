@@ -16,6 +16,10 @@ const postLogSchema = new Schema(
      * once a post succeeds — the idempotency key `hasPostedOnDateKey` checks
      * against, so a duplicate daily-post trigger doesn't post twice. */
     postDateKey: { type: String, required: false },
+    /** The claimed Topic doc's id, set while status is "pending_approval" so approve/reject can finalize or revert it. */
+    topicId: { type: String, required: false },
+    imageUrl: { type: String, required: false },
+    approveError: { type: String, required: false },
     facebookResponse: { type: Schema.Types.Mixed, required: false },
     startedAt: { type: Date, required: false },
     finishedAt: { type: Date, required: false },

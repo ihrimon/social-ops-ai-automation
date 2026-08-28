@@ -12,3 +12,4 @@ tests
 .env.local
 .env.production
 npm-debug.log
+apps/admin-dashboard

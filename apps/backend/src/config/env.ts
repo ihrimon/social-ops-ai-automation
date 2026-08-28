@@ -65,6 +65,8 @@ export const webhookConfig = {
 export const adminConfig = {
   dashboardJwtSecret: process.env.ADMIN_DASHBOARD_JWT_SECRET,
   dashboardPassword: process.env.ADMIN_DASHBOARD_PASSWORD,
+  /** Gate the daily post behind admin approval instead of auto-publishing. Off by default — preserves existing behavior. */
+  requirePostApproval: process.env.REQUIRE_POST_APPROVAL === "true",
 };
 
 /** CORS allowlist for the admin dashboard frontend. */
