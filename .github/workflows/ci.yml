@@ -29,20 +29,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
+      - name: Lint (backend)
         run: npm run lint
+
+      - name: Lint (admin dashboard)
+        run: npm run lint:dashboard
 
       - name: Format check
         run: npm run format:check
 
-      - name: Typecheck (src)
+      - name: Typecheck (backend src)
         run: npm run typecheck
 
-      - name: Typecheck (tests)
+      - name: Typecheck (backend tests)
         run: npm run typecheck:tests
 
-      - name: Test
+      - name: Typecheck (admin dashboard)
+        run: npm run typecheck:dashboard
+
+      - name: Test (backend)
         run: npm test
+
+      - name: Test (admin dashboard)
+        run: npm run test:dashboard
 
       - name: Build (backend)
         run: npm run build

@@ -335,7 +335,7 @@ Pre-commit hooks (Husky + lint-staged) run ESLint/Prettier on staged files autom
 
 Current suite (`apps/backend/tests/unit`, `apps/backend/tests/integration`) covers prompt builders, the comment/message dedupe stores, the Messenger reply queue worker (debounce/claim/lease-reclaim race conditions), the Facebook webhook signature verifier, admin auth, and webhook payload schema validation.
 
-Run `npm run build:dashboard` (or `npm run typecheck --workspace=apps/admin-dashboard`) to check the admin dashboard separately.
+The admin dashboard has its own lint/typecheck/test/build, wired into the same root scripts: `npm run lint:dashboard`, `npm run typecheck:dashboard`, `npm run test:dashboard` (Vitest + jsdom — covers the API client's token storage and login flow), `npm run build:dashboard`.
 
 ---
 

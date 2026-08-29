@@ -51,7 +51,8 @@ export default function ConversationDetail() {
       </div>
       {data.paused && (
         <p className="muted">
-          AI replies paused{data.pausedUntil ? ` until ${new Date(data.pausedUntil).toLocaleString()}` : ""}.
+          AI replies paused
+          {data.pausedUntil ? ` until ${new Date(data.pausedUntil).toLocaleString()}` : ""}.
         </p>
       )}
       <div className="thread">

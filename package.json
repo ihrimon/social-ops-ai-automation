@@ -11,18 +11,26 @@
     "start": "npm run start --workspace=apps/backend",
     "typecheck": "npm run typecheck --workspace=apps/backend",
     "typecheck:tests": "npm run typecheck:tests --workspace=apps/backend",
+    "typecheck:dashboard": "npm run typecheck --workspace=apps/admin-dashboard",
     "lint": "npm run lint --workspace=apps/backend",
     "lint:fix": "npm run lint:fix --workspace=apps/backend",
+    "lint:dashboard": "npm run lint --workspace=apps/admin-dashboard",
+    "lint:dashboard:fix": "npm run lint:fix --workspace=apps/admin-dashboard",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "backup": "npm run backup --workspace=apps/backend",
     "test": "npm run test --workspace=apps/backend",
     "test:watch": "npm run test:watch --workspace=apps/backend",
+    "test:dashboard": "npm run test --workspace=apps/admin-dashboard",
     "prepare": "husky"
   },
   "lint-staged": {
     "apps/backend/**/*.{ts,js,mjs}": [
       "eslint --config apps/backend/eslint.config.js --fix",
+      "prettier --write"
+    ],
+    "apps/admin-dashboard/**/*.{ts,tsx,js}": [
+      "eslint --config apps/admin-dashboard/eslint.config.js --fix",
       "prettier --write"
     ],
     "*.{json,md}": [

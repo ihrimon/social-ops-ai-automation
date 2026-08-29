@@ -24,7 +24,9 @@ export default function Knowledge() {
       await updateKnowledgeBase(content);
       setMessage("Saved — the knowledge base has been re-synced.");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Save failed.");
+      setError(
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Save failed."
+      );
     } finally {
       setSaving(false);
     }
@@ -36,8 +38,8 @@ export default function Knowledge() {
     <div>
       <h2>Knowledge base</h2>
       <p className="muted">
-        Edits here are validated as JSON, written to <code>knowledge-base.json</code>, and immediately
-        re-embedded into the RAG store.
+        Edits here are validated as JSON, written to <code>knowledge-base.json</code>, and
+        immediately re-embedded into the RAG store.
       </p>
       <textarea
         className="json-editor"

@@ -56,7 +56,9 @@ export default function Posts() {
           </div>
           {post.imageUrl && <img className="post-image" src={post.imageUrl} alt="" />}
           <p className="article-text">{post.article}</p>
-          {post.approveError && <p className="error-text">Last attempt failed: {post.approveError}</p>}
+          {post.approveError && (
+            <p className="error-text">Last attempt failed: {post.approveError}</p>
+          )}
           <div className="card-actions">
             <button onClick={() => handleApprove(post._id)}>Approve &amp; publish</button>
             <button className="danger" onClick={() => handleReject(post._id)}>
