@@ -6,6 +6,7 @@ backups
 .env.production
 images
 conversationHistory.json
+*.log
 
 # Ignore all markdown files except README.md
 *.md

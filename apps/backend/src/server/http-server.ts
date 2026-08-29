@@ -53,6 +53,10 @@ function notFoundHandler(_req: Request, res: Response): void {
 function createApp(): Application {
   const app = express();
 
+  if (serverConfig.trustProxyHops > 0) {
+    app.set("trust proxy", serverConfig.trustProxyHops);
+  }
+
   app.get("/", (_req, res) => {
     res.status(200).json({
       status: "ok",

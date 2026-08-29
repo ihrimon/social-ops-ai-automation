@@ -37,6 +37,14 @@ export const facebookConfig = {
 /** HTTP server. */
 export const serverConfig = {
   port: process.env.PORT || 3000,
+  /**
+   * Number of reverse-proxy hops to trust for X-Forwarded-For (Express's
+   * `trust proxy` setting) — needed for rate limiting to key off the real
+   * client IP instead of the proxy's. 0 (default) assumes the app is
+   * directly exposed; set to 1 if it sits behind a single proxy (nginx,
+   * Cloudflare Tunnel, ngrok, a PaaS load balancer, etc.).
+   */
+  trustProxyHops: Number(process.env.TRUST_PROXY_HOPS || 0),
 };
 
 /** App runtime mode / logging verbosity. */

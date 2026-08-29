@@ -1,5 +1,6 @@
 import express, { Router, type Request, type Response } from "express";
-import { facebookConfig } from "../config/env.js";
+import rateLimit from "express-rate-limit";
+import { facebookConfig, rateLimitConfig } from "../config/env.js";
 import { logger } from "../infra/logger.js";
 import { errorMessage } from "../infra/errors.js";
 import { addConversationMessage } from "../modules/messenger/conversation.store.js";
@@ -185,6 +186,17 @@ function handleWebhookVerification(req: Request, res: Response): void {
  * parser — the raw buffer must survive parsing for `verifyFacebookSignature`.
  */
 export const webhookRouter: Router = Router();
+
+// Protects the public webhook endpoint from abuse/DoS — keyed by client IP
+// (correct only if serverConfig.trustProxyHops is set when behind a proxy).
+webhookRouter.use(
+  rateLimit({
+    windowMs: rateLimitConfig.windowMs,
+    limit: rateLimitConfig.maxRequests,
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+);
 
 webhookRouter.use(
   express.json({

@@ -220,6 +220,11 @@ ADMIN_DASHBOARD_PASSWORD=
 CORS_ORIGIN=http://localhost:5173
 REQUIRE_POST_APPROVAL=false
 SENTRY_DSN=
+
+# Webhook rate limiting (optional, defaults shown) + reverse-proxy awareness
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+TRUST_PROXY_HOPS=0
 ```
 
 ---
@@ -338,6 +343,7 @@ Run `npm run build:dashboard` (or `npm run typecheck --workspace=apps/admin-dash
 
 - **Webhook signature verification**: `crypto.timingSafeEqual` HMAC-SHA256 check rejects tampered requests before any processing.
 - **Retry policy**: `infra/retry.ts` backs off exponentially on Gemini `429`s and Graph API `5xx`/network errors.
+- **Webhook rate limiting**: `/webhook` (both the verification `GET` and event `POST`) is rate-limited per client IP (`express-rate-limit`, `RATE_LIMIT_WINDOW_MS`/`RATE_LIMIT_MAX_REQUESTS`) to blunt abuse/DoS against the public endpoint. If deployed behind a reverse proxy (nginx, Cloudflare Tunnel, a PaaS load balancer), set `TRUST_PROXY_HOPS=1` so it keys off the real client IP from `X-Forwarded-For` instead of the proxy's — otherwise all traffic shares one bucket.
 - **Structured logging**: `infra/logger.ts` is backed by [pino](https://getpino.io/) — pretty-printed locally, raw NDJSON in production (`NODE_ENV=production`) for log aggregators. Level follows `LOG_LEVEL` (or forced to `debug` if `DEBUG` is set).
 - **Error tracking**: set `SENTRY_DSN` to enable [Sentry](https://sentry.io/) (`infra/sentry.ts`) — captures uncaught exceptions/unhandled rejections (`index.ts`) and any error that reaches the Express error middleware (`server/http-server.ts`). Left unset, it silently no-ops — no code changes needed either way.
 - **Admin dashboard auth**: `/admin/login` is rate-limited (`express-rate-limit`) against brute-forcing the shared password; the password itself is compared with `crypto.timingSafeEqual` (`modules/admin/auth.ts`), and every other `/admin/*` route requires a signed JWT. CORS on `/admin` is scoped to `CORS_ORIGIN` only — unset, no cross-origin browser access is granted.
