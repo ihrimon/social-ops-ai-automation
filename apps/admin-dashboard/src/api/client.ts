@@ -86,12 +86,15 @@ export function rejectPost(id: string): Promise<{ ok: boolean; error?: string }>
   return request(`/admin/posts/${id}/reject`, { method: "POST" });
 }
 
+export type LeadStatus = "none" | "lead" | "sale";
+
 export interface ConversationSummary {
   userId: string;
   lastMessageText: string;
   lastMessageRole: string;
   lastMessageAt: string;
   messageCount: number;
+  leadStatus: LeadStatus;
 }
 
 export function listConversations(): Promise<{ conversations: ConversationSummary[] }> {
@@ -110,6 +113,8 @@ export interface ConversationDetail {
   messages: ConversationMessage[];
   paused: boolean;
   pausedUntil: string | null;
+  leadStatus: LeadStatus;
+  leadNote: string | null;
 }
 
 export function getConversation(userId: string): Promise<ConversationDetail> {
@@ -122,6 +127,49 @@ export function pauseConversation(userId: string): Promise<{ ok: boolean }> {
 
 export function resumeConversation(userId: string): Promise<{ ok: boolean }> {
   return request(`/admin/conversations/${encodeURIComponent(userId)}/resume`, { method: "POST" });
+}
+
+export function setConversationLead(
+  userId: string,
+  status: LeadStatus,
+  note?: string
+): Promise<{ ok: boolean }> {
+  return request(`/admin/conversations/${encodeURIComponent(userId)}/lead`, {
+    method: "POST",
+    body: JSON.stringify({ status, note }),
+  });
+}
+
+export interface PostEngagement {
+  likes: number;
+  comments: number;
+  shares: number;
+  permalinkUrl?: string;
+}
+
+export interface PostAnalyticsRow extends PostLog {
+  engagement: PostEngagement | null;
+}
+
+export function getPostAnalytics(limit = 10): Promise<{ posts: PostAnalyticsRow[] }> {
+  return request(`/admin/analytics/posts?limit=${limit}`);
+}
+
+export interface LeadStats {
+  totalConversations: number;
+  totalLeads: number;
+  totalSales: number;
+}
+
+export interface Lead {
+  userId: string;
+  status: LeadStatus;
+  note?: string;
+  markedAt: string;
+}
+
+export function getLeadAnalytics(limit = 20): Promise<{ stats: LeadStats; leads: Lead[] }> {
+  return request(`/admin/analytics/leads?limit=${limit}`);
 }
 
 export function getKnowledgeBase(): Promise<{ content: string }> {

@@ -3,6 +3,7 @@ import rateLimit from "express-rate-limit";
 import { isValidAdminPassword, requireAdminAuth, signAdminToken } from "../modules/admin/auth.js";
 import { publishPendingPost, rejectPendingPost } from "../jobs/daily-post-job.js";
 import { getPostLogById, listPostLogs } from "../modules/content/post-log.store.js";
+import { extractFacebookPostId, getPostEngagement } from "../modules/content/engagement.service.js";
 import {
   getConversationHistory,
   listConversations,
@@ -12,6 +13,15 @@ import {
   pauseUserReplies,
   resumeUserReplies,
 } from "../modules/messenger/queue.worker.js";
+import {
+  LEAD_STATUSES,
+  getLeadStats,
+  getLeadStatus,
+  getLeadStatusesForUsers,
+  listLeads,
+  setLeadStatus,
+  type LeadStatus,
+} from "../modules/messenger/lead.store.js";
 import {
   getKnowledgeBaseRaw,
   updateKnowledgeBaseRaw,
@@ -84,16 +94,44 @@ async function handleListConversations(req: Request, res: Response): Promise<voi
     limit: parseQueryLimit(req.query.limit, 20),
     before: parseQueryBefore(req.query.before),
   });
-  res.status(200).json({ conversations });
+
+  const leadStatuses = await getLeadStatusesForUsers(
+    conversations.map((conversation) => conversation.userId)
+  );
+  const enriched = conversations.map((conversation) => ({
+    ...conversation,
+    leadStatus: leadStatuses.get(conversation.userId) ?? "none",
+  }));
+
+  res.status(200).json({ conversations: enriched });
 }
 
 async function handleGetConversation(req: Request, res: Response): Promise<void> {
   const userId = String(req.params.userId);
-  const [messages, pauseStatus] = await Promise.all([
+  const [messages, pauseStatus, lead] = await Promise.all([
     getConversationHistory(userId, { limit: 200 }),
     getPauseStatus(userId),
+    getLeadStatus(userId),
   ]);
-  res.status(200).json({ userId, messages, ...pauseStatus });
+  res.status(200).json({
+    userId,
+    messages,
+    ...pauseStatus,
+    leadStatus: lead?.status ?? "none",
+    leadNote: lead?.note ?? null,
+  });
+}
+
+async function handleSetConversationLead(req: Request, res: Response): Promise<void> {
+  const status = req.body?.status;
+  if (!LEAD_STATUSES.includes(status)) {
+    res.status(400).json({ error: `status must be one of: ${LEAD_STATUSES.join(", ")}` });
+    return;
+  }
+
+  const note = typeof req.body?.note === "string" ? req.body.note.slice(0, 500) : undefined;
+  await setLeadStatus(String(req.params.userId), status as LeadStatus, note);
+  res.status(200).json({ ok: true });
 }
 
 async function handlePauseConversation(req: Request, res: Response): Promise<void> {
@@ -104,6 +142,36 @@ async function handlePauseConversation(req: Request, res: Response): Promise<voi
 async function handleResumeConversation(req: Request, res: Response): Promise<void> {
   await resumeUserReplies(String(req.params.userId));
   res.status(200).json({ ok: true });
+}
+
+/** Post-performance leaderboard for the analytics dashboard — likes/comments/shares per recent published post. */
+async function handlePostAnalytics(req: Request, res: Response): Promise<void> {
+  const posts = await listPostLogs({
+    status: "posted",
+    limit: parseQueryLimit(req.query.limit, 10),
+  });
+
+  const rows = await Promise.all(
+    posts.map(async (post) => {
+      const postId = extractFacebookPostId(post.facebookResponse);
+      const engagement = postId ? await getPostEngagement(postId) : null;
+      const score = engagement
+        ? engagement.likes + engagement.comments * 2 + engagement.shares * 3
+        : -1;
+      return { ...post, engagement, score };
+    })
+  );
+
+  rows.sort((a, b) => b.score - a.score);
+  res.status(200).json({ posts: rows.map(({ score: _score, ...row }) => row) });
+}
+
+async function handleLeadAnalytics(req: Request, res: Response): Promise<void> {
+  const [stats, leads] = await Promise.all([
+    getLeadStats(),
+    listLeads({ limit: parseQueryLimit(req.query.limit, 20) }),
+  ]);
+  res.status(200).json({ stats, leads });
 }
 
 async function handleGetKnowledge(_req: Request, res: Response): Promise<void> {
@@ -162,6 +230,10 @@ adminRouter.get("/conversations", handleListConversations);
 adminRouter.get("/conversations/:userId", handleGetConversation);
 adminRouter.post("/conversations/:userId/pause", handlePauseConversation);
 adminRouter.post("/conversations/:userId/resume", handleResumeConversation);
+adminRouter.post("/conversations/:userId/lead", handleSetConversationLead);
+
+adminRouter.get("/analytics/posts", handlePostAnalytics);
+adminRouter.get("/analytics/leads", handleLeadAnalytics);
 
 adminRouter.get("/knowledge", handleGetKnowledge);
 adminRouter.put("/knowledge", handleUpdateKnowledge);

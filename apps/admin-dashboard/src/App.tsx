@@ -6,6 +6,7 @@ import Posts from "./pages/Posts";
 import Conversations from "./pages/Conversations";
 import ConversationDetail from "./pages/ConversationDetail";
 import Knowledge from "./pages/Knowledge";
+import Analytics from "./pages/Analytics";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   if (!getToken()) {
@@ -28,6 +29,7 @@ export default function App() {
                 <Route path="/posts" element={<Posts />} />
                 <Route path="/conversations" element={<Conversations />} />
                 <Route path="/conversations/:userId" element={<ConversationDetail />} />
+                <Route path="/analytics" element={<Analytics />} />
                 <Route path="/knowledge" element={<Knowledge />} />
               </Routes>
             </Layout>

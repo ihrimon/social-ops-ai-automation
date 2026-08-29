@@ -199,6 +199,7 @@ MONGODB_MESSAGE_DEDUPE_COLLECTION=processed_messages
 MONGODB_COMMENT_DEDUPE_COLLECTION=processed_comments
 MONGODB_PENDING_REPLIES_COLLECTION=pending_replies
 MONGODB_TOPICS_COLLECTION=topics
+MONGODB_LEADS_COLLECTION=leads
 
 # Messenger tuning (optional, defaults shown)
 MESSENGER_REPLY_DEBOUNCE_MS=20000
@@ -256,6 +257,7 @@ A private web UI (`apps/admin-dashboard/`, a separate Vite + React + TypeScript 
 - **Post approval** — when `REQUIRE_POST_APPROVAL=true`, review/approve/reject the daily draft before it's published.
 - **Conversation log** — browse Messenger conversations, and manually pause/resume the AI for a given user (the human-handoff mechanism the app already uses internally, exposed as a button).
 - **Knowledge base editor** — view/edit `knowledge-base.json` and trigger an immediate re-sync, without shell/file access to the server.
+- **Analytics** — post-performance leaderboard (likes/comments/shares per recent post, via the `pages_read_engagement` permission already granted — no `read_insights`/impressions/reach) and lead/sale conversion tracking (mark a conversation as a lead or sale from its detail page, see the conversion rate on the Analytics page).
 
 ### Backend setup
 
@@ -333,7 +335,7 @@ npm run format:check  # Prettier check
 
 Pre-commit hooks (Husky + lint-staged) run ESLint/Prettier on staged files automatically.
 
-Current suite (`apps/backend/tests/unit`, `apps/backend/tests/integration`) covers prompt builders, the comment/message dedupe stores, the Messenger reply queue worker (debounce/claim/lease-reclaim race conditions), the Facebook webhook signature verifier, admin auth, and webhook payload schema validation.
+Current suite (`apps/backend/tests/unit`, `apps/backend/tests/integration`) covers prompt builders, the comment/message dedupe stores, the Messenger reply queue worker (debounce/claim/lease-reclaim race conditions), the Facebook webhook signature verifier, admin auth, the lead store, the post-engagement service, and webhook payload schema validation.
 
 The admin dashboard has its own lint/typecheck/test/build, wired into the same root scripts: `npm run lint:dashboard`, `npm run typecheck:dashboard`, `npm run test:dashboard` (Vitest + jsdom — covers the API client's token storage and login flow), `npm run build:dashboard`.
 

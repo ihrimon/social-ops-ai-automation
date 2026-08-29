@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, clearToken, getToken, login } from "./client";
+import {
+  ApiError,
+  clearToken,
+  getLeadAnalytics,
+  getPostAnalytics,
+  getToken,
+  login,
+  setConversationLead,
+} from "./client";
 
 function jsonResponse(status: number, body: unknown): Response {
   return {
@@ -123,5 +131,58 @@ describe("login", () => {
 
     const [, options] = fetchMock.mock.calls[0];
     expect(options.headers.Authorization).toBe("Bearer existing-token");
+  });
+});
+
+describe("analytics/lead client functions", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", createFakeStorage());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("getPostAnalytics requests the given limit", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { posts: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getPostAnalytics(5);
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toContain("/admin/analytics/posts?limit=5");
+  });
+
+  it("getLeadAnalytics returns stats and leads from the response", async () => {
+    const stats = { totalConversations: 10, totalLeads: 3, totalSales: 1 };
+    const leads = [{ userId: "u1", status: "lead", markedAt: "2026-01-01T00:00:00Z" }];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, { stats, leads })));
+
+    const result = await getLeadAnalytics();
+
+    expect(result).toEqual({ stats, leads });
+  });
+
+  it("setConversationLead posts the status and note", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await setConversationLead("user-1", "sale", "closed the deal");
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toContain("/admin/conversations/user-1/lead");
+    expect(options.method).toBe("POST");
+    expect(JSON.parse(options.body)).toEqual({ status: "sale", note: "closed the deal" });
+  });
+
+  it("propagates ApiError when marking a lead fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(jsonResponse(400, { error: "status must be one of: none, lead, sale" }))
+    );
+
+    await expect(setConversationLead("user-1", "sale")).rejects.toBeInstanceOf(ApiError);
   });
 });

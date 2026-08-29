@@ -100,6 +100,7 @@ export const mongoConfig = {
   commentDedupeCollection: process.env.MONGODB_COMMENT_DEDUPE_COLLECTION || "processed_comments",
   pendingRepliesCollection: process.env.MONGODB_PENDING_REPLIES_COLLECTION || "pending_replies",
   topicsCollection: process.env.MONGODB_TOPICS_COLLECTION || "topics",
+  leadsCollection: process.env.MONGODB_LEADS_COLLECTION || "leads",
   maxPoolSize: Number(process.env.MONGODB_MAX_POOL_SIZE || 20),
   minPoolSize: Number(process.env.MONGODB_MIN_POOL_SIZE || 0),
   serverSelectionTimeoutMs: Number(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || 5000),

@@ -26,6 +26,7 @@ export default function Conversations() {
             <th>Last message</th>
             <th>Messages</th>
             <th>When</th>
+            <th>Lead</th>
           </tr>
         </thead>
         <tbody>
@@ -41,6 +42,13 @@ export default function Conversations() {
               </td>
               <td>{conversation.messageCount}</td>
               <td>{new Date(conversation.lastMessageAt).toLocaleString()}</td>
+              <td>
+                {conversation.leadStatus !== "none" && (
+                  <span className={`badge badge-${conversation.leadStatus}`}>
+                    {conversation.leadStatus}
+                  </span>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

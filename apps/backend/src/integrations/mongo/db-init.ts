@@ -5,6 +5,7 @@ import { syncKnowledgeBase } from "../../modules/knowledge/knowledge.store.js";
 import { MessageDedupe } from "../../modules/messenger/dedupe.model.js";
 import { ConversationMessage } from "../../modules/messenger/conversation.model.js";
 import { PendingReply } from "../../modules/messenger/pending-reply.model.js";
+import { Lead } from "../../modules/messenger/lead.model.js";
 import { CommentDedupe } from "../../modules/comments/dedupe.model.js";
 import { PostLog } from "../../modules/content/post-log.model.js";
 import { Topic } from "../../modules/content/topic.model.js";
@@ -34,6 +35,7 @@ export async function initDatabase(): Promise<boolean> {
       KnowledgeChunk.syncIndexes(),
       EmbeddingCache.syncIndexes(),
       Topic.syncIndexes(),
+      Lead.syncIndexes(),
     ]);
 
     // Run static knowledge base sync once on startup

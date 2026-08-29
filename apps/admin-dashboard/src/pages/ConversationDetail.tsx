@@ -4,18 +4,22 @@ import {
   getConversation,
   pauseConversation,
   resumeConversation,
+  setConversationLead,
   type ConversationDetail as ConversationDetailData,
+  type LeadStatus,
 } from "../api/client";
 
 export default function ConversationDetail() {
   const { userId = "" } = useParams();
   const [data, setData] = useState<ConversationDetailData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [note, setNote] = useState("");
 
   async function load() {
     setLoading(true);
     const result = await getConversation(userId);
     setData(result);
+    setNote(result.leadNote ?? "");
     setLoading(false);
   }
 
@@ -31,6 +35,11 @@ export default function ConversationDetail() {
 
   async function handleResume() {
     await resumeConversation(userId);
+    await load();
+  }
+
+  async function handleLeadChange(status: LeadStatus) {
+    await setConversationLead(userId, status, note || undefined);
     await load();
   }
 
@@ -55,6 +64,35 @@ export default function ConversationDetail() {
           {data.pausedUntil ? ` until ${new Date(data.pausedUntil).toLocaleString()}` : ""}.
         </p>
       )}
+
+      <div className="card">
+        <div className="card-header">
+          <strong>Lead status</strong>
+          {data.leadStatus !== "none" && (
+            <span className={`badge badge-${data.leadStatus}`}>{data.leadStatus}</span>
+          )}
+        </div>
+        <input
+          placeholder="Optional note (budget, requirements, etc.)"
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          style={{ width: "100%", margin: "0.5rem 0" }}
+        />
+        <div className="card-actions">
+          <button onClick={() => handleLeadChange("lead")} disabled={data.leadStatus === "lead"}>
+            Mark as lead
+          </button>
+          <button onClick={() => handleLeadChange("sale")} disabled={data.leadStatus === "sale"}>
+            Mark as sale
+          </button>
+          {data.leadStatus !== "none" && (
+            <button className="link-button" onClick={() => handleLeadChange("none")}>
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="thread">
         {data.messages.map((message, index) => (
           <div

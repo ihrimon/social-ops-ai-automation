@@ -170,6 +170,12 @@ textarea {
 .badge-rejected {
   background: #7f1d1d;
 }
+.badge-lead {
+  background: #713f12;
+}
+.badge-sale {
+  background: #14532d;
+}
 
 .muted {
   color: var(--muted);
