@@ -333,7 +333,7 @@ npm run format:check  # Prettier check
 
 Pre-commit hooks (Husky + lint-staged) run ESLint/Prettier on staged files automatically.
 
-Current suite (`apps/backend/tests/unit`, `apps/backend/tests/integration`) covers prompt builders, the comment dedupe store, the Facebook webhook signature verifier, admin auth, and webhook payload schema validation.
+Current suite (`apps/backend/tests/unit`, `apps/backend/tests/integration`) covers prompt builders, the comment/message dedupe stores, the Messenger reply queue worker (debounce/claim/lease-reclaim race conditions), the Facebook webhook signature verifier, admin auth, and webhook payload schema validation.
 
 Run `npm run build:dashboard` (or `npm run typecheck --workspace=apps/admin-dashboard`) to check the admin dashboard separately.
 
